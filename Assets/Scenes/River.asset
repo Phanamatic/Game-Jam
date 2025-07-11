@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 0}
+  m_Name: River
+  m_EditorClassIdentifier: Assembly-CSharp::WaterMaterialConfig
+  flowDirection: {x: 0, y: 1}
+  flowSpeed: 1
+  enableFlow: 1
+  enableWaves: 1
+  waveSpeed: 2
+  waveAmplitude: 0.1
+  waveFrequency: 1
+  enableColorVariation: 1
+  deepWaterColor: {r: 0.1, g: 0.3, b: 0.8, a: 0.8}
+  shallowWaterColor: {r: 0.3, g: 0.7, b: 1, a: 0.6}
+  colorTransitionSpeed: 0.5
+  enableFoam: 1
+  foamTexture: {fileID: 10904, guid: 0000000000000000f000000000000000, type: 0}
+  foamScale: 2
+  foamSpeed: 1.5
+  enableTurbulence: 1
+  turbulenceScale: 1
+  turbulenceSpeed: 0.8
