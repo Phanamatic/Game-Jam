@@ -11,15 +11,24 @@ public class Buoyancy : MonoBehaviour
     [SerializeField, Range(0f, 1f)]
     private float dragInWater = 0.2f;                        // ↓ NEW default = 0.2
     [SerializeField] private Transform[] buoyancyPoints;     // empties on hull
-
+    
+    /* ───── Bouncy Water Effect ───── */
+    [Header("Bouncy Water Effect")]
+    [SerializeField] private float bouncyForce = 5000f;      // Force multiplier for bouncy effect
+    [SerializeField] private float bouncyDuration = 3f;      // How long bouncy effect lasts
+    
     /* ───── Internals ───── */
     private Rigidbody rb;
     private float gravity;                                   // |g|
+    private bool isBouncyMode = false;
+    private float bouncyTimer = 0f;
+    private float originalDensity;
 
     void Awake()
     {
         rb      = GetComponent<Rigidbody>();
         gravity = Mathf.Abs(Physics.gravity.y);
+        originalDensity = density;
 
         if (buoyancyPoints == null || buoyancyPoints.Length == 0)
         {
@@ -31,6 +40,16 @@ public class Buoyancy : MonoBehaviour
 
     void FixedUpdate()
     {
+        // Handle bouncy timer
+        if (isBouncyMode)
+        {
+            bouncyTimer -= Time.fixedDeltaTime;
+            if (bouncyTimer <= 0f)
+            {
+                EndBouncyMode();
+            }
+        }
+        
         foreach (Transform point in buoyancyPoints)
             ApplyBuoyancyAndDrag(point.position);
     }
@@ -41,9 +60,10 @@ public class Buoyancy : MonoBehaviour
         float depth = waterLevel - pointPosition.y;          // >0 when under water
         if (depth <= 0f) return;
 
-        /* 1 ─ Archimedes’ lift (unchanged) */
+        /* 1 ─ Archimedes' lift (with bouncy modification) */
         float displaced = Mathf.Min(volume, depth);
-        Vector3 buoyancy = Vector3.up * (density * gravity * displaced);
+        float effectiveDensity = isBouncyMode ? density * bouncyForce : density;
+        Vector3 buoyancy = Vector3.up * (effectiveDensity * gravity * displaced);
         rb.AddForceAtPosition(buoyancy, pointPosition, ForceMode.Force);
 
         /* 2 ─ Hydrodynamic drag (milder) */
@@ -51,4 +71,20 @@ public class Buoyancy : MonoBehaviour
         Vector3 drag = -velocity * dragInWater * depth;
         rb.AddForceAtPosition(drag, pointPosition, ForceMode.Force);
     }
+    
+    /* ───── Public Methods for Bouncy Effect ───── */
+    public void StartBouncyMode()
+    {
+        isBouncyMode = true;
+        bouncyTimer = bouncyDuration;
+        Debug.Log("BOUNCY WATER ACTIVATED!");
+    }
+    
+    public void EndBouncyMode()
+    {
+        isBouncyMode = false;
+        Debug.Log("Bouncy water ended");
+    }
+    
+    public bool IsBouncyMode => isBouncyMode;
 }

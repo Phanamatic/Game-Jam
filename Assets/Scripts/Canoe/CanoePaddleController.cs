@@ -39,6 +39,7 @@ public class CanoePaddleController : MonoBehaviour
     /* ─── Water Effects ─── */
     WaterEffectsManager waterEffects;
     bool prevBladeWet = false;
+    
 
     void Awake()
     {
@@ -63,6 +64,7 @@ public class CanoePaddleController : MonoBehaviour
         {
             Debug.LogWarning("CanoePaddleController: No WaterEffectsManager found in scene!");
         }
+        
     }
 
     /* ─── Aim & pitch ─── */
@@ -130,6 +132,7 @@ public class CanoePaddleController : MonoBehaviour
                         float rippleIntensity = Mathf.Clamp01(dist * 2f); // Scale intensity by movement
                         waterEffects.OnWaterCollision(tip, rippleIntensity);
                     }
+                    
                 }
             }
         }

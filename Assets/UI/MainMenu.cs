@@ -21,8 +21,8 @@ public class MainMenu : MonoBehaviour
     }
 
     // Called when "Close" is pressed in controls panel
-    public void CloseControls()
-    {
+    public void CloseControls() 
+    { 
         controlsPanel.SetActive(false);
     }
 
