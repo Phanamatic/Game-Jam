@@ -1,3 +1,0 @@
-# shader customization
-
-Documentation Upcoming
