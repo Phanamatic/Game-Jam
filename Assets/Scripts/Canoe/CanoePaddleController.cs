@@ -35,6 +35,10 @@ public class CanoePaddleController : MonoBehaviour
     InputAction click;
     bool        isLeftSide;         // updated every frame
     bool        prevLeftSide;       // track previous side to detect switches
+    
+    /* ─── Water Effects ─── */
+    WaterEffectsManager waterEffects;
+    bool prevBladeWet = false;
 
     void Awake()
     {
@@ -51,6 +55,13 @@ public class CanoePaddleController : MonoBehaviour
             foreach (var pc in paddle.GetComponentsInChildren<Collider>())
                 foreach (var cc in GetComponentsInChildren<Collider>())
                     if (pc != cc) Physics.IgnoreCollision(pc, cc);
+        }
+        
+        /* Find water effects manager */
+        waterEffects = FindFirstObjectByType<WaterEffectsManager>();
+        if (waterEffects == null)
+        {
+            Debug.LogWarning("CanoePaddleController: No WaterEffectsManager found in scene!");
         }
     }
 
@@ -112,9 +123,26 @@ public class CanoePaddleController : MonoBehaviour
                     Vector3 torque =
                         Vector3.Cross(tip - rb.worldCenterOfMass, impulse) * torqueFactor;
                     rb.AddTorque(torque, ForceMode.Impulse);
+                    
+                    // Create water ripple effect based on paddle force
+                    if (waterEffects != null)
+                    {
+                        float rippleIntensity = Mathf.Clamp01(dist * 2f); // Scale intensity by movement
+                        waterEffects.OnWaterCollision(tip, rippleIntensity);
+                    }
                 }
             }
         }
+        
+        // Detect paddle entering/leaving water for splash effects
+        if (bladeWet != prevBladeWet && waterEffects != null)
+        {
+            if (bladeWet) // Paddle just entered water
+            {
+                waterEffects.OnWaterCollision(tip, 1.5f); // Stronger ripple for initial entry
+            }
+        }
+        prevBladeWet = bladeWet;
         lastTip = tip;
     }
 

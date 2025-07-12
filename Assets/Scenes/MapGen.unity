@@ -175,7 +175,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: 96cdfd0c48f3d7e4b9fb3b9bf00526f0, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1597,6 +1597,62 @@ Transform:
   m_Children: []
   m_Father: {fileID: 4724362252164417640}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1897178207
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1897178209}
+  - component: {fileID: 1897178208}
+  m_Layer: 0
+  m_Name: WaterEffect
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1897178208
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1897178207}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1318eb93c0230ba469ad95babdf7a641, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  waterMaterial: {fileID: 2100000, guid: 6f51f814eccc8c04cb8d5c4429c8caaf, type: 2}
+  foamDepthFade: 2
+  foamIntensity: 13.87
+  foamColor: {r: 1, g: 1, b: 1, a: 1}
+  rippleStrength: 0.5
+  rippleFadeTime: 3
+  rippleRadius: 2
+  maxRipples: 5
+  waterLayer:
+    serializedVersion: 2
+    m_Bits: 16
+  waterLevel: 0
+--- !u!4 &1897178209
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1897178207}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 75.106384, y: 0.19685617, z: 461.8271}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2113214467
 GameObject:
   m_ObjectHideFlags: 0
@@ -1613,6 +1669,7 @@ GameObject:
   - component: {fileID: 2113214470}
   - component: {fileID: 2113214469}
   - component: {fileID: 2113214468}
+  - component: {fileID: 2113214476}
   m_Layer: 3
   m_Name: Canoe
   m_TagString: Player
@@ -1804,6 +1861,22 @@ Transform:
   - {fileID: 1278539138}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2113214476
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2113214467}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b318df886b57dbe4ebd8c50f2e725899, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  waterLevel: 0
+  rippleIntensity: 0.8
+  minVelocityForRipple: 0.5
+  rippleCooldown: 0.2
 --- !u!1 &2147398107
 GameObject:
   m_ObjectHideFlags: 0
@@ -1956,3 +2029,4 @@ SceneRoots:
   - {fileID: 1151770387}
   - {fileID: 380532575}
   - {fileID: 2113214475}
+  - {fileID: 1897178209}

@@ -7,8 +7,8 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: CartoonWater
-  m_Shader: {fileID: -6465566751694194690, guid: 11027087c719aa1459f2ad0cacf43bdb, type: 3}
+  m_Name: Foam
+  m_Shader: {fileID: -6465566751694194690, guid: 10ad86ab3ad7e7f4bb18124ad7be325c, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
@@ -97,8 +97,8 @@ Material:
     - _DstBlend: 0
     - _DstBlendAlpha: 0
     - _EnvironmentReflections: 1
-    - _FoamDepthFade: 2
-    - _FoamIntensity: 13.87
+    - _FoamDepthFade: 216.5
+    - _FoamIntensity: 2991.9
     - _GlossMapScale: 0
     - _Glossiness: 0
     - _GlossyReflections: 0
@@ -108,9 +108,9 @@ Material:
     - _QueueControl: 0
     - _QueueOffset: 0
     - _ReceiveShadows: 1
-    - _RippleCount: 1
-    - _RippleDensity: 165
-    - _RippleSlimness: 15.4
+    - _RippleCount: 0
+    - _RippleDensity: 206.4
+    - _RippleSlimness: 74.87
     - _RippleSpeed: 1
     - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
@@ -118,11 +118,11 @@ Material:
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
     - _Surface: 0
-    - _WaveSpeed: 1.61
+    - _WaveSpeed: 680.8
     - _WorkflowMode: 1
     - _ZWrite: 1
     m_Colors:
-    - _BaseColor: {r: 0.071680546, g: 0, b: 1, a: 1}
+    - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _FoamColor: {r: 1, g: 1, b: 1, a: 1}
