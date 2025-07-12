@@ -8,11 +8,13 @@ public class SplashScreenController : MonoBehaviour
     [Header("Logo & UI")]
     [SerializeField] private RectTransform logo;    // assign Image RectTransform
     [SerializeField] private CanvasGroup fader;     // assign CanvasGroup on the Image
+    [SerializeField] private CanvasGroup additionalImageFader; // assign CanvasGroup on the other image (starts at alpha 1)
 
     [Header("Timing")]
     [SerializeField] private float fadeInTime   = 0.6f;
     [SerializeField] private float spinTime     = 3.0f;
     [SerializeField] private float postSpinWait = 1.5f;
+    [SerializeField] private float fadeOutTime  = 0.6f; // New: time to fade out logo before load
 
     [Header("Spin")]
     [Tooltip("Complete spins before stopping upright")]
@@ -68,8 +70,20 @@ public class SplashScreenController : MonoBehaviour
         }
         logo.localScale = original;
 
-        // 4. Wait, then load next scene
+        // 4. Wait
         yield return new WaitForSeconds(postSpinWait);
+
+        // 5. Fade-out (new)
+        for (float t = 0; t < fadeOutTime; t += Time.deltaTime)
+        {
+            fader.alpha = 1f - (t / fadeOutTime);      // 1 ➜ 0 for logo
+            additionalImageFader.alpha = 1f - (t / fadeOutTime); // 1 ➜ 0 for other image
+            yield return null;
+        }
+        fader.alpha = 0f;
+        additionalImageFader.alpha = 0f;
+
+        // 6. Load next scene
         SceneManager.LoadScene(nextScene, LoadSceneMode.Single);
     }
 }
