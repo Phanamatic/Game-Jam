@@ -50,7 +50,7 @@ public class ShaderGraphUpdateGuide : MonoBehaviour
 6. BLEND WITH EXISTING COLOR:
    - Find the existing Multiply node that feeds into BaseColor
    - Add Node: 'Lerp'
-     * Connect existing color (current BaseColor input) to input A
+     * Connect existing  color (current BaseColor input) to input A
      * Connect foam color result to input B
      * Connect foam intensity to input T
    - Connect Lerp output to BaseColor block

@@ -108,17 +108,17 @@ Material:
     - _QueueControl: 0
     - _QueueOffset: 0
     - _ReceiveShadows: 1
-    - _RippleCount: 1
-    - _RippleDensity: 165
-    - _RippleSlimness: 15.4
-    - _RippleSpeed: 1
+    - _RippleCount: 5
+    - _RippleDensity: 420.6
+    - _RippleSlimness: 203.7
+    - _RippleSpeed: 4.8
     - _Smoothness: 0.5
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _SrcBlendAlpha: 1
     - _Surface: 0
-    - _WaveSpeed: 1.61
+    - _WaveSpeed: 0.2
     - _WorkflowMode: 1
     - _ZWrite: 1
     m_Colors:
