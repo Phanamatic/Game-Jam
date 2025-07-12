@@ -108,7 +108,7 @@ Material:
     - _QueueControl: 0
     - _QueueOffset: 0
     - _ReceiveShadows: 1
-    - _RippleCount: 5
+    - _RippleCount: 0
     - _RippleDensity: 420.6
     - _RippleSlimness: 203.7
     - _RippleSpeed: 4.8
