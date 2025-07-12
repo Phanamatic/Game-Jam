@@ -2,35 +2,41 @@ using UnityEngine;
 
 public class ThirdPersonFollow : MonoBehaviour
 {
-    [Tooltip("Transform to follow (canoe root).")]
     [SerializeField] Transform target;
 
-    [Header("Offsets (local to target)")]
-    [SerializeField] float distance = 4f;   // backward
-    [SerializeField] float height   = 2f;   // upward
+    [Header("Offsets")]
+    [SerializeField] float distance = 4f;
+    [SerializeField] float height   = 2f;
 
-    [Header("Smoothing")]
-    [SerializeField] float positionLerp = 10f;  // higher = snappier
-    [SerializeField] float rotationLerp = 15f;
+    [Header("Damping")]
+    [SerializeField] float horizSmooth = 0.15f;     // larger = looser follow
+    [SerializeField] float vertSmooth  = 0.3f;      // damp vertical bob
+    [SerializeField] float rotLerp     = 12f;
 
-    void LateUpdate()                                   // run after all physics
+    Vector3 velH, velV;     // SmoothDamp velocity caches
+
+    void LateUpdate()
     {
         if (!target) return;
 
-        // 1. Desired camera position (behind + above, in target’s local space)
-        Vector3 desired =
-            target.position
-          - target.forward * distance
-          + Vector3.up * height;
+        Vector3 desired = target.position
+                        - target.forward * distance
+                        + Vector3.up * height;
 
-        // 2. Smoothly interpolate position & look-at
-        transform.position = Vector3.Lerp(
-            transform.position, desired, positionLerp * Time.deltaTime);
+        /* Split smoothing: xz separately from y */
+        Vector3 curPos   = transform.position;
+        Vector3 smoothXZ = new Vector3(
+            Mathf.SmoothDamp(curPos.x, desired.x, ref velH.x, horizSmooth),
+            curPos.y,
+            Mathf.SmoothDamp(curPos.z, desired.z, ref velH.z, horizSmooth));
+
+        float smoothY = Mathf.SmoothDamp(curPos.y, desired.y, ref velV.y, vertSmooth);
+
+        transform.position = new Vector3(smoothXZ.x, smoothY, smoothXZ.z);
 
         Quaternion look = Quaternion.LookRotation(
             target.position - transform.position, Vector3.up);
-
         transform.rotation = Quaternion.Slerp(
-            transform.rotation, look, rotationLerp * Time.deltaTime);
+            transform.rotation, look, rotLerp * Time.deltaTime);
     }
 }
