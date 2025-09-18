@@ -45,7 +45,10 @@ public class CanoePaddleController : MonoBehaviour
     [SerializeField] float catchRiseTime    = 0.08f;  // s ramp-in
     [SerializeField] float releaseFallTime  = 0.06f;  // s ramp-out
     [SerializeField] float forceSmoothing   = 12f;    // lerp-exp rate
-    [SerializeField] float antiTeleportDist = 1.5f;   // m/frame cap for tip delta
+    [SerializeField] float antiTeleportDist = 0.65f;  // m/frame cap for tip delta
+    [SerializeField] float maxTipSpeed      = 4.5f;   // clamp relative speed for stability
+    [SerializeField] float maxLinearAccel   = 5.5f;   // m/s^2 cap to keep canoe controllable
+    [SerializeField] float maxYawTorque     = 120f;   // N·m clamp for steering bias
     [Tooltip("Local blade face normal. Default assumes +X is blade face.")]
     [SerializeField] Vector3 bladeNormalLocal = Vector3.right;
 
@@ -94,6 +97,8 @@ public class CanoePaddleController : MonoBehaviour
         click.Enable();
 
         waterEffects = Object.FindFirstObjectByType<WaterEffectsManager>();
+
+        lastTip = PaddleTip();
     }
 
     void Update()
@@ -161,6 +166,12 @@ public class CanoePaddleController : MonoBehaviour
             Vector3 vPlane = Vector3.ProjectOnPlane(tipVel, Vector3.up);
             float   vMag   = vPlane.magnitude;
 
+            if (vMag > maxTipSpeed)
+            {
+                vPlane = vPlane.normalized * maxTipSpeed;
+                vMag = maxTipSpeed;
+            }
+
             if (vMag > 1e-3f)
             {
                 // Angle of attack based on blade face vs motion
@@ -175,9 +186,14 @@ public class CanoePaddleController : MonoBehaviour
                 Vector3 dragDir = -vPlane.normalized; // resist motion
                 hydroForce = dragDir * forceMag;
 
+                float maxForce = Mathf.Max(0f, rb.mass * maxLinearAccel);
+                if (maxForce > 0f && hydroForce.sqrMagnitude > maxForce * maxForce)
+                    hydroForce = hydroForce.normalized * maxForce;
+
                 // Optional yaw bias: convert lateral component into extra yaw torque
                 float lateral = Vector3.Dot(hydroForce, transform.right);
-                Vector3 yawTorque = Vector3.up * (lateral * yawBias);
+                float yawMag = Mathf.Clamp(lateral * yawBias, -maxYawTorque, maxYawTorque);
+                Vector3 yawTorque = Vector3.up * yawMag;
                 rb.AddTorque(yawTorque, ForceMode.Force);
             }
         }
