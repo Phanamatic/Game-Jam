@@ -2,9 +2,11 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /* CanoeBalance
- * Keeps the canoe upright with A/D counter-torque while water wobble tries to tip it.
- * Paddle hits temporarily make balancing harder.
- * Capsize calls PlayerHealth.Kill().
+ * Keeps the canoe upright by translating A/D input into counter-torque while
+ * water wobble tries to tip it. A BalanceMinigame UI mediates how much control
+ * the player has; slipping out of the target window amplifies wobble and weakens
+ * recovery. Paddle hits temporarily make balancing harder. Capsize calls
+ * PlayerHealth.Kill().
  */
 [RequireComponent(typeof(Rigidbody))]
 public class CanoeBalance : MonoBehaviour
@@ -21,6 +23,7 @@ public class CanoeBalance : MonoBehaviour
     [SerializeField] float wobbleAccel = 30f;     // torque accel
     [SerializeField] float wobbleHz    = 0.6f;    // sine base
     [SerializeField] float wobbleChaos = 0.35f;   // perlin mod
+    [SerializeField, Range(0f, 2f)] float wobbleFailBonus = 0.85f; // extra wobble when UI missed
 
     [Header("Hit Disruption")]
     [SerializeField] float hitKickDegrees   = 8f;   // roll kick impulse
@@ -28,8 +31,14 @@ public class CanoeBalance : MonoBehaviour
     [SerializeField] float harderDuration   = 2.5f; // seconds
     [SerializeField] float harderDecayPerSec= 1.2f; // smooth recovery
 
+    [Header("Balance Mini-game")]
+    [SerializeField] bool autoCreateMinigame   = true;
+    [SerializeField, Range(0f, 1f)] float minTorqueFactor   = 0.2f;
+    [SerializeField, Range(0f, 1f)] float minAutoRighting   = 0.35f;
+
     Rigidbody rb;
     PlayerHealth health;
+    BalanceMinigame minigame;
 
     float harderMult = 1f;
     float harderTimer = 0f;
@@ -39,34 +48,58 @@ public class CanoeBalance : MonoBehaviour
         rb = GetComponent<Rigidbody>();
         health = GetComponent<PlayerHealth>();
         if (rb.angularDamping < 0.05f) rb.angularDamping = 0.05f; // small damping keeps it lively
+
+        if (autoCreateMinigame)
+            minigame = GetComponent<BalanceMinigame>() ?? gameObject.AddComponent<BalanceMinigame>();
+        else
+            minigame = GetComponent<BalanceMinigame>();
     }
 
     void FixedUpdate()
     {
+        float roll = GetSignedRollDeg();
+        float capAngle = Mathf.Max(1f, Mathf.Abs(capsizeAngle));
+        float rollNorm = Mathf.Clamp(roll / capAngle, -1f, 1f);
+
+        float authority = 1f;
+        float input = 0f;
+
+        if (minigame && minigame.isActiveAndEnabled)
+        {
+            minigame.SetRollBias(rollNorm);
+            authority = Mathf.Clamp01(minigame.Authority);
+            input = minigame.ManualLean;
+        }
+        else
+        {
+            var kbd = Keyboard.current;
+            if (kbd != null)
+            {
+                if (kbd.aKey.isPressed) input -= 1f;
+                if (kbd.dKey.isPressed) input += 1f;
+            }
+        }
+
+        float torqueFactor = Mathf.Lerp(minTorqueFactor, 1f, authority);
+        float autoFactor = Mathf.Lerp(minAutoRighting, 1f, authority);
+        float wobbleFactor = 1f + (1f - authority) * wobbleFailBonus;
+
         // Water wobble around local Z (roll)
         float t = Time.time;
         float wobSin = Mathf.Sin(t * wobbleHz * Mathf.PI * 2f);
         float wobPer = Mathf.PerlinNoise(t * wobbleHz, t * wobbleChaos) * 2f - 1f;
         float wobble = wobSin * (1f + 0.6f * wobPer);
-        rb.AddRelativeTorque(Vector3.forward * (wobbleAccel * wobble * harderMult), ForceMode.Acceleration);
+        rb.AddRelativeTorque(Vector3.forward * (wobbleAccel * wobble * harderMult * wobbleFactor), ForceMode.Acceleration);
 
-        // Player input: A left, D right. Harder = less authority.
-        float input = 0f;
-        var kbd = Keyboard.current;
-        if (kbd != null)
-        {
-            if (kbd.aKey.isPressed) input -= 1f;
-            if (kbd.dKey.isPressed) input += 1f;
-        }
-        rb.AddRelativeTorque(Vector3.forward * (-inputTorqueAccel * input / Mathf.Max(1f, harderMult)), ForceMode.Acceleration);
+        // Player input: derived from balancing mini-game or fallback keyboard.
+        rb.AddRelativeTorque(Vector3.forward * (-inputTorqueAccel * input * torqueFactor / Mathf.Max(1f, harderMult)), ForceMode.Acceleration);
 
         // Auto-righting proportional to roll fraction
-        float roll = GetSignedRollDeg();
-        float righting = Mathf.Sign(roll) * Mathf.Min(Mathf.Abs(roll) / capsizeAngle, 1f);
-        rb.AddRelativeTorque(Vector3.forward * (-autoRightingAccel * righting), ForceMode.Acceleration);
+        float righting = Mathf.Sign(roll) * Mathf.Min(Mathf.Abs(roll) / capAngle, 1f);
+        rb.AddRelativeTorque(Vector3.forward * (-autoRightingAccel * righting * autoFactor), ForceMode.Acceleration);
 
         // Capsize check
-        if (Mathf.Abs(roll) >= capsizeAngle)
+        if (Mathf.Abs(roll) >= capAngle)
         {
             health?.Kill();
             rb.AddRelativeTorque(transform.forward * Mathf.Sign(roll) * 50f, ForceMode.Impulse);
