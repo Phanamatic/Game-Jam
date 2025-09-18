@@ -52,12 +52,17 @@ public class CanoePaddleController : MonoBehaviour
     [Tooltip("Local blade face normal. Default assumes +X is blade face.")]
     [SerializeField] Vector3 bladeNormalLocal = Vector3.right;
 
+    [Header("Balance Interaction")]
+    [SerializeField, Range(0f, 1f)] float minCatchAuthority = 0.35f;
+    [SerializeField, Range(0f, 1f)] float minForceAuthority = 0.25f;
+
     /* ─── Lean tuning ─── */
     const float leanAngle = 8f;  // avatar lean
     const float leanLerp  = 6f;
 
     /* ─── Internals ─── */
     Rigidbody   rb;
+    CanoeBalance balance;
     Vector3     lastTip;
     Vector3     smoothedForce;
     float       catchBlend;      // 0..1 gate for catch/release
@@ -74,6 +79,7 @@ public class CanoePaddleController : MonoBehaviour
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
+        balance = GetComponent<CanoeBalance>();
         if (!paddle)
         {
             Debug.LogError("CanoePaddleController: assign 'paddle' Transform.");
@@ -153,8 +159,13 @@ public class CanoePaddleController : MonoBehaviour
         float submFactor = Mathf.Clamp01(depth / Mathf.Max(0.001f, fullSubmergeDepth));
         BladeWet = click.IsPressed() && depth > 0.02f;
 
+        float balanceAuthority = balance ? balance.CurrentAuthority : 1f;
+        float catchAuthority = Mathf.Lerp(minCatchAuthority, 1f, balanceAuthority);
+        float forceAuthority = Mathf.Lerp(minForceAuthority, 1f, balanceAuthority);
+
         // Catch/release blend
         float targetCatch = (BladeWet && LastTipSpeed > minCatchSpeed) ? 1f : 0f;
+        targetCatch *= catchAuthority;
         float tau = targetCatch > catchBlend ? catchRiseTime : releaseFallTime;
         catchBlend = LerpExp(catchBlend, targetCatch, tau, dt);
 
@@ -182,17 +193,17 @@ public class CanoePaddleController : MonoBehaviour
                 float Cd = Mathf.Lerp(CdBase, CdMax, aoa01); // more face-on -> higher drag
                 float areaEff = bladeArea * submFactor;
 
-                float forceMag = 0.5f * waterDensity * Cd * areaEff * vMag * vMag * forceGain * catchBlend;
+                float forceMag = 0.5f * waterDensity * Cd * areaEff * vMag * vMag * forceGain * catchBlend * forceAuthority;
                 Vector3 dragDir = -vPlane.normalized; // resist motion
                 hydroForce = dragDir * forceMag;
 
-                float maxForce = Mathf.Max(0f, rb.mass * maxLinearAccel);
+                float maxForce = Mathf.Max(0f, rb.mass * maxLinearAccel * forceAuthority);
                 if (maxForce > 0f && hydroForce.sqrMagnitude > maxForce * maxForce)
                     hydroForce = hydroForce.normalized * maxForce;
 
                 // Optional yaw bias: convert lateral component into extra yaw torque
                 float lateral = Vector3.Dot(hydroForce, transform.right);
-                float yawMag = Mathf.Clamp(lateral * yawBias, -maxYawTorque, maxYawTorque);
+                float yawMag = Mathf.Clamp(lateral * yawBias, -maxYawTorque * forceAuthority, maxYawTorque * forceAuthority);
                 Vector3 yawTorque = Vector3.up * yawMag;
                 rb.AddTorque(yawTorque, ForceMode.Force);
             }
