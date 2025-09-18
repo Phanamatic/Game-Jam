@@ -40,6 +40,9 @@ public class CanoeBalance : MonoBehaviour
     PlayerHealth health;
     BalanceMinigame minigame;
 
+    public float CurrentAuthority { get; private set; } = 1f;
+    public float CurrentRollDeg { get; private set; }
+
     float harderMult = 1f;
     float harderTimer = 0f;
 
@@ -58,6 +61,7 @@ public class CanoeBalance : MonoBehaviour
     void FixedUpdate()
     {
         float roll = GetSignedRollDeg();
+        CurrentRollDeg = roll;
         float capAngle = Mathf.Max(1f, Mathf.Abs(capsizeAngle));
         float rollNorm = Mathf.Clamp(roll / capAngle, -1f, 1f);
 
@@ -66,7 +70,7 @@ public class CanoeBalance : MonoBehaviour
 
         if (minigame && minigame.isActiveAndEnabled)
         {
-            minigame.SetRollBias(rollNorm);
+            minigame.SetRollState(rollNorm, roll);
             authority = Mathf.Clamp01(minigame.Authority);
             input = minigame.ManualLean;
         }
@@ -79,6 +83,8 @@ public class CanoeBalance : MonoBehaviour
                 if (kbd.dKey.isPressed) input += 1f;
             }
         }
+
+        CurrentAuthority = Mathf.Clamp01(authority);
 
         float torqueFactor = Mathf.Lerp(minTorqueFactor, 1f, authority);
         float autoFactor = Mathf.Lerp(minAutoRighting, 1f, authority);
@@ -139,5 +145,7 @@ public class CanoeBalance : MonoBehaviour
 
         harderMult = Mathf.Max(harderMult, harderMultOnHit);
         harderTimer = Mathf.Max(harderTimer, harderDuration);
+
+        minigame?.ApplyHitDisruption(sideSign, Mathf.Clamp01(strength01));
     }
 }

@@ -33,19 +33,53 @@ public class BalanceMinigame : MonoBehaviour
     [SerializeField] Color markerSafeColor    = new(0.2f, 0.7f, 1f, 0.85f);
     [SerializeField] Color markerDangerColor  = new(1f, 0.3f, 0.3f, 0.85f);
 
+    [Header("Mini View")]
+    [SerializeField] Vector2 miniViewSize = new(220f, 120f);
+    [SerializeField] Vector2 miniViewOffset = new(0f, -80f);
+    [SerializeField] Color miniBackgroundColor = new(0f, 0f, 0f, 0.45f);
+    [SerializeField] Color miniWaterColor = new(0.45f, 0.65f, 0.9f, 0.4f);
+    [SerializeField] Color miniCanoeColor = new(0.88f, 0.42f, 0.18f, 0.9f);
+    [SerializeField] Color miniBubbleSafeColor = new(0.4f, 0.95f, 0.65f, 0.95f);
+    [SerializeField] Color miniBubbleDangerColor = new(1f, 0.45f, 0.35f, 0.95f);
+    [SerializeField] float miniBubbleRollRange = 28f;
+    [SerializeField] float miniCanoeRollMultiplier = 1f;
+
+    [Header("Hit Disruption")]
+    [SerializeField] float hitMarkerImpulse = 0.85f;
+    [SerializeField] float hitWindowShrink = 0.4f;
+    [SerializeField] float hitWindowRecovery = 0.8f;
+    [SerializeField] float hitTargetKick = 0.45f;
+    [SerializeField] float hitTargetRecovery = 1.4f;
+    [SerializeField] float hitJitterDuration = 0.75f;
+    [SerializeField] float hitJitterFrequency = 16f;
+    [SerializeField] float hitJitterAmplitude = 0.18f;
+
     Canvas canvas;
     RectTransform gaugeRect;
     RectTransform targetRect;
     RectTransform markerRect;
     Image markerImage;
 
+    RectTransform miniRoot;
+    RectTransform miniCanoeRect;
+    RectTransform miniBubbleRect;
+    Image miniBubbleImage;
+    Image miniWaterImage;
+
     float markerPos;   // [-1,1]
     float markerVel;
     float targetPos;   // [-1,1]
+    float targetVisualPos;
     float authority;
     float rollBias;
+    float rollDegrees;
+    float windowScale = 1f;
+    float hitOffset;
+    float hitJitterTimer;
+    float miniBubbleBaseY;
+    Vector2 targetBaseSize;
 
-    float TargetHalf => Mathf.Clamp(targetWindowFraction * 0.5f, 0.08f, 0.45f);
+    float TargetHalf => Mathf.Clamp(targetWindowFraction * windowScale * 0.5f, 0.08f, 0.45f);
     float MarkerHalf => Mathf.Clamp(markerFraction * 0.5f, 0.04f, 0.45f);
 
     public float Authority => authority;
@@ -73,12 +107,41 @@ public class BalanceMinigame : MonoBehaviour
         {
             Destroy(canvas.gameObject);
             canvas = null;
+            miniRoot = null;
+            miniCanoeRect = null;
+            miniBubbleRect = null;
+            miniBubbleImage = null;
+            miniWaterImage = null;
         }
+    }
+
+    public void SetRollState(float normalized, float rollDeg)
+    {
+        rollBias = Mathf.Clamp(normalized, -1f, 1f);
+        rollDegrees = rollDeg;
     }
 
     public void SetRollBias(float normalized)
     {
-        rollBias = Mathf.Clamp(normalized, -1f, 1f);
+        SetRollState(normalized, Mathf.Clamp(normalized, -1f, 1f) * miniBubbleRollRange);
+    }
+
+    public void ApplyHitDisruption(float sideSign, float strength01)
+    {
+        float strength = Mathf.Clamp01(strength01);
+        if (strength <= 0f) return;
+
+        float direction = Mathf.Sign(sideSign);
+        if (direction == 0f)
+            direction = Mathf.Sign(Random.value - 0.5f);
+
+        markerVel += direction * hitMarkerImpulse * Mathf.Lerp(0.45f, 1.1f, strength);
+        windowScale = Mathf.Clamp(windowScale - hitWindowShrink * strength, 0.25f, 1f);
+        hitOffset = Mathf.Clamp(hitOffset + direction * hitTargetKick * strength, -0.9f, 0.9f);
+        if (hitJitterDuration > 0f)
+            hitJitterTimer = Mathf.Max(hitJitterTimer, hitJitterDuration * strength);
+        else
+            hitJitterTimer = 0f;
     }
 
     void Update()
@@ -101,14 +164,32 @@ public class BalanceMinigame : MonoBehaviour
         float markerLimit = 1f - MarkerHalf;
         markerPos = Mathf.Clamp(markerPos + markerVel * dt, -markerLimit, markerLimit);
 
-        // Target window drifts with roll bias + Perlin noise.
+        if (windowScale < 1f)
+            windowScale = Mathf.MoveTowards(windowScale, 1f, hitWindowRecovery * dt);
+
+        if (!Mathf.Approximately(hitOffset, 0f))
+            hitOffset = Mathf.MoveTowards(hitOffset, 0f, hitTargetRecovery * dt);
+
+        float windowHalf = TargetHalf;
+
+        // Target window drifts with roll bias, disruption offset, and Perlin noise.
         float noise = Mathf.PerlinNoise(Time.time * targetNoiseFreq, 0.37f) * 2f - 1f;
-        float desired = Mathf.Clamp(rollBias * rollInfluence + noise * targetNoiseAmp,
-                                    -1f + TargetHalf, 1f - TargetHalf);
+        float desired = Mathf.Clamp(rollBias * rollInfluence + hitOffset + noise * targetNoiseAmp,
+                                    -1f + windowHalf, 1f - windowHalf);
         targetPos = Mathf.MoveTowards(targetPos, desired, targetDriftSpeed * dt);
 
-        float distance = Mathf.Abs(markerPos - targetPos);
-        float rawAuthority = Mathf.Clamp01((TargetHalf - distance) / Mathf.Max(TargetHalf, 1e-3f));
+        float jitter = 0f;
+        if (hitJitterTimer > 0f)
+        {
+            hitJitterTimer = Mathf.Max(0f, hitJitterTimer - dt);
+            float normalized = hitJitterDuration > 1e-4f ? hitJitterTimer / hitJitterDuration : 0f;
+            jitter = Mathf.Sin(Time.time * hitJitterFrequency * Mathf.PI * 2f) * hitJitterAmplitude * normalized;
+        }
+
+        targetVisualPos = Mathf.Clamp(targetPos + jitter, -1f + windowHalf, 1f - windowHalf);
+
+        float distance = Mathf.Abs(markerPos - targetVisualPos);
+        float rawAuthority = Mathf.Clamp01((windowHalf - distance) / Mathf.Max(windowHalf, 1e-3f));
         float lerp = 1f - Mathf.Exp(-authoritySmooth * dt);
         authority = Mathf.Lerp(authority, rawAuthority, lerp);
 
@@ -143,6 +224,7 @@ public class BalanceMinigame : MonoBehaviour
         targetRect.SetParent(gaugeRect, false);
         targetRect.anchorMin = targetRect.anchorMax = new Vector2(0.5f, 0.5f);
         targetRect.sizeDelta = new Vector2(gaugeSize.x * 0.82f, gaugeSize.y * targetWindowFraction);
+        targetBaseSize = targetRect.sizeDelta;
         var targetImage = targetRect.GetComponent<Image>();
         targetImage.color = windowColor;
         targetImage.raycastTarget = false;
@@ -156,7 +238,56 @@ public class BalanceMinigame : MonoBehaviour
         markerImage.color = markerSafeColor;
         markerImage.raycastTarget = false;
 
+        BuildMiniView();
         UpdateVisuals();
+    }
+
+    void BuildMiniView()
+    {
+        if (!canvas || miniRoot) return;
+
+        miniRoot = new GameObject("BalanceMiniView", typeof(RectTransform), typeof(Image))
+            .GetComponent<RectTransform>();
+        miniRoot.SetParent(canvas.transform, false);
+        miniRoot.anchorMin = miniRoot.anchorMax = new Vector2(0.5f, 1f);
+        miniRoot.pivot = new Vector2(0.5f, 1f);
+        miniRoot.sizeDelta = miniViewSize;
+        miniRoot.anchoredPosition = miniViewOffset;
+        var bg = miniRoot.GetComponent<Image>();
+        bg.color = miniBackgroundColor;
+        bg.raycastTarget = false;
+
+        var waterRect = new GameObject("MiniWater", typeof(RectTransform), typeof(Image))
+            .GetComponent<RectTransform>();
+        waterRect.SetParent(miniRoot, false);
+        waterRect.anchorMin = new Vector2(0f, 0.5f);
+        waterRect.anchorMax = new Vector2(1f, 0.5f);
+        waterRect.sizeDelta = new Vector2(0f, Mathf.Max(6f, miniViewSize.y * 0.12f));
+        miniWaterImage = waterRect.GetComponent<Image>();
+        miniWaterImage.color = miniWaterColor;
+        miniWaterImage.raycastTarget = false;
+
+        miniCanoeRect = new GameObject("MiniCanoe", typeof(RectTransform), typeof(Image))
+            .GetComponent<RectTransform>();
+        miniCanoeRect.SetParent(miniRoot, false);
+        miniCanoeRect.anchorMin = miniCanoeRect.anchorMax = new Vector2(0.5f, 0.38f);
+        miniCanoeRect.sizeDelta = new Vector2(miniViewSize.x * 0.6f, Mathf.Max(8f, miniViewSize.y * 0.18f));
+        var canoeImage = miniCanoeRect.GetComponent<Image>();
+        canoeImage.color = miniCanoeColor;
+        canoeImage.raycastTarget = false;
+
+        miniBubbleRect = new GameObject("BalanceBubble", typeof(RectTransform), typeof(Image))
+            .GetComponent<RectTransform>();
+        miniBubbleRect.SetParent(miniRoot, false);
+        miniBubbleRect.anchorMin = miniBubbleRect.anchorMax = new Vector2(0.5f, 0.74f);
+        miniBubbleRect.sizeDelta = new Vector2(Mathf.Max(10f, miniViewSize.y * 0.18f), Mathf.Max(10f, miniViewSize.y * 0.18f));
+        miniBubbleRect.anchoredPosition = new Vector2(0f, Mathf.Max(6f, miniViewSize.y * 0.26f));
+        miniBubbleBaseY = miniBubbleRect.anchoredPosition.y;
+        miniBubbleImage = miniBubbleRect.GetComponent<Image>();
+        miniBubbleImage.color = miniBubbleSafeColor;
+        miniBubbleImage.raycastTarget = false;
+
+        UpdateMiniView();
     }
 
     void UpdateVisuals()
@@ -164,13 +295,52 @@ public class BalanceMinigame : MonoBehaviour
         if (!gaugeRect || !markerRect || !targetRect) return;
 
         float gaugeHalf = gaugeRect.sizeDelta.y * 0.5f;
-        float markerHalf = markerRect.sizeDelta.y * 0.5f;
-        float targetHalf = targetRect.sizeDelta.y * 0.5f;
 
+        markerRect.sizeDelta = new Vector2(gaugeRect.sizeDelta.x * 0.6f, gaugeRect.sizeDelta.y * markerFraction);
+        float markerHalf = markerRect.sizeDelta.y * 0.5f;
         markerRect.anchoredPosition = new Vector2(0f, markerPos * Mathf.Max(0f, gaugeHalf - markerHalf));
-        targetRect.anchoredPosition = new Vector2(0f, targetPos * Mathf.Max(0f, gaugeHalf - targetHalf));
+
+        float clampedScale = Mathf.Clamp(windowScale, 0.2f, 1.4f);
+        targetRect.sizeDelta = new Vector2(targetBaseSize.x, targetBaseSize.y * clampedScale);
+        float targetHalf = targetRect.sizeDelta.y * 0.5f;
+        targetRect.anchoredPosition = new Vector2(0f, targetVisualPos * Mathf.Max(0f, gaugeHalf - targetHalf));
 
         float danger = Mathf.Clamp01((dangerAuthority - authority) / Mathf.Max(dangerAuthority, 1e-3f));
         markerImage.color = Color.Lerp(markerSafeColor, markerDangerColor, danger);
+
+        UpdateMiniView();
+    }
+
+    void UpdateMiniView()
+    {
+        if (!miniRoot) return;
+
+        if (miniCanoeRect)
+            miniCanoeRect.localRotation = Quaternion.Euler(0f, 0f, -rollDegrees * miniCanoeRollMultiplier);
+
+        if (miniBubbleRect)
+        {
+            float range = Mathf.Max(1f, miniBubbleRollRange);
+            float normalized = Mathf.Clamp(rollDegrees / range, -1f, 1f);
+            float travel = Mathf.Max(0f, (miniViewSize.x * 0.5f) - (miniBubbleRect.sizeDelta.x * 0.5f) - 4f);
+            miniBubbleRect.anchoredPosition = new Vector2(normalized * travel, miniBubbleBaseY);
+        }
+
+        if (miniBubbleImage)
+        {
+            float danger = Mathf.Clamp01((dangerAuthority - authority) / Mathf.Max(dangerAuthority, 1e-3f));
+            miniBubbleImage.color = Color.Lerp(miniBubbleSafeColor, miniBubbleDangerColor, danger);
+        }
+
+        if (miniWaterImage)
+        {
+            float wob = Mathf.Sin(Time.time * 1.2f) * 0.5f + 0.5f;
+            float mul = Mathf.Lerp(0.9f, 1.05f, wob);
+            Color wobble = miniWaterColor;
+            wobble.r *= mul;
+            wobble.g *= mul;
+            wobble.b *= mul;
+            miniWaterImage.color = wobble;
+        }
     }
 }
