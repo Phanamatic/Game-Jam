@@ -1,9 +1,12 @@
 using UnityEngine;
 
+/* RotationClamper
+ * Allows enough roll for balance + capsizes while keeping pitch modest.
+ */
 public class RotationClamper : MonoBehaviour
 {
-    [SerializeField] float maxPitchX = 8f;  // degrees
-    [SerializeField] float maxRollZ  = 4f;  // degrees
+    [SerializeField] float maxPitchX = 8f;   // degrees
+    [SerializeField] float maxRollZ  = 70f;  // wider to let balancing breathe
 
     void LateUpdate()
     {
