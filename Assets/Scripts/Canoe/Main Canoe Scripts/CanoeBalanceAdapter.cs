@@ -31,8 +31,16 @@ public class CanoeBalanceAdapter : MonoBehaviour
     [SerializeField] float wobbleAccel = 10f;  // Nm/s
     [SerializeField] float wobbleHz = 0.35f;
     [SerializeField] float wobbleChaos = 0.22f;
+    [SerializeField] float wobbleAuthorityBoost = 2.2f;
+
+    [Header("Instability Punishment")]
+    [SerializeField] float imbalanceTorqueAccel = 140f;
+    [SerializeField] float imbalanceCurve = 1.45f;
+    [SerializeField] float imbalanceSmooth = 6f;
 
     Rigidbody rb;
+    float wobbleFiltered;
+    float imbalanceState;
 
     void Awake()
     {
@@ -40,6 +48,12 @@ public class CanoeBalanceAdapter : MonoBehaviour
         if (!ui)      ui = FindFirstObjectByType<BalanceMinigame>();
         if (!health)  health = GetComponent<PlayerHealth>();
         if (rb.angularDamping < 0.08f) rb.angularDamping = 0.08f;
+    }
+
+    void OnEnable()
+    {
+        wobbleFiltered = 0f;
+        imbalanceState = 0f;
     }
 
     void FixedUpdate()
@@ -58,11 +72,12 @@ public class CanoeBalanceAdapter : MonoBehaviour
         }
 
         // Player input from UI
-        float authority = ui ? ui.Authority : 1f;           // 0..1
-        float lean      = ui ? ui.ManualLean : 0f;          // -1..1
+        float authority   = ui ? ui.Authority : 1f;           // 0..1
+        float lean        = ui ? ui.ManualLean : 0f;          // -1..1
+        float balanceErr  = ui ? ui.BalanceErrorNormalized : 0f;
 
         // PD toward upright, partially reduced when out of window
-        float pdScale   = Mathf.Lerp(0.25f, 1f, authority); // never zero
+        float pdScale   = Mathf.Lerp(0.08f, 1f, authority); // never zero
         float pdTorque  = -(kp * rollDeg + kd * rollRate) * pdScale;
 
         // Player torque scaled by authority
@@ -72,10 +87,20 @@ public class CanoeBalanceAdapter : MonoBehaviour
         float t = Time.time;
         float wobSin = Mathf.Sin(t * wobbleHz * Mathf.PI * 2f);
         float wobPer = Mathf.PerlinNoise(t * wobbleHz, t * wobbleChaos) * 2f - 1f;
-        float wobble = (wobSin * (1f + 0.5f * wobPer)) * wobbleAccel;
+        float wobSample = (wobSin + wobPer) * 0.5f;
+        wobbleFiltered = Mathf.Lerp(wobbleFiltered, wobSample, 1f - Mathf.Exp(-3f * dt));
+        float wobbleStrength = Mathf.Lerp(1f, wobbleAuthorityBoost, Mathf.Clamp01(1f - authority));
+        float wobble = wobbleFiltered * wobbleAccel * wobbleStrength;
+
+        // Punish being outside the window with escalating torque
+        float errMagnitude = Mathf.Clamp01(Mathf.Abs(balanceErr));
+        float errSign = Mathf.Sign(balanceErr);
+        float imbalanceTarget = errSign * Mathf.Pow(errMagnitude, imbalanceCurve);
+        imbalanceState = Mathf.Lerp(imbalanceState, imbalanceTarget, 1f - Mathf.Exp(-imbalanceSmooth * dt));
+        float punishTorque = imbalanceState * imbalanceTorqueAccel;
 
         // Sum + clamp
-        float totalNmPerSec = Mathf.Clamp(pdTorque + playerTorque + wobble, -maxBalanceAccel, maxBalanceAccel);
+        float totalNmPerSec = Mathf.Clamp(pdTorque + playerTorque + wobble + punishTorque, -maxBalanceAccel, maxBalanceAccel);
         rb.AddRelativeTorque(Vector3.forward * totalNmPerSec, ForceMode.Acceleration);
 
         // Capsize check

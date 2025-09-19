@@ -12,10 +12,10 @@ public class BalanceMinigame : MonoBehaviour
 {
     [Header("UI Layout")]
     [SerializeField] Vector2 referenceResolution = new(1920f, 1080f);
-    [SerializeField] Vector2 anchoredPosition   = new(0f, 0f);
-    [SerializeField] Vector2 gaugeSize          = new(320f, 86f); // width, height
-    [SerializeField, Range(0.15f, 0.9f)] float targetWindowFraction = 0.38f;
-    [SerializeField, Range(0.08f, 0.6f)] float markerFraction       = 0.18f;
+    [SerializeField] Vector2 anchoredPosition   = new(0f, 120f);
+    [SerializeField] Vector2 gaugeSize          = new(560f, 120f); // width, height
+    [SerializeField, Range(0.15f, 0.9f)] float targetWindowFraction = 0.32f;
+    [SerializeField, Range(0.08f, 0.6f)] float markerFraction       = 0.14f;
 
     [Header("Marker Motion (2nd-order)")]
     [SerializeField] float markerHz = 3.0f;
@@ -24,9 +24,9 @@ public class BalanceMinigame : MonoBehaviour
     [SerializeField] float recenterGain = 0.8f;
 
     [Header("Target Drift")]
-    [SerializeField] float targetDriftSpeed = 1.15f;
-    [SerializeField] float targetNoiseAmp   = 0.45f;
-    [SerializeField] float targetNoiseFreq  = 0.8f;
+    [SerializeField] float targetDriftSpeed = 0.9f;
+    [SerializeField] float targetNoiseAmp   = 0.35f;
+    [SerializeField] float targetNoiseFreq  = 0.45f;
     [SerializeField] float rollInfluence    = 0.65f;
     [SerializeField] float rollRateBoost    = 0.4f;
     [SerializeField] float rollRateLowpass  = 8f;
@@ -43,8 +43,8 @@ public class BalanceMinigame : MonoBehaviour
     [SerializeField] Color markerDangerColor = new(1f, 0.3f, 0.3f, 0.85f);
 
     [Header("Mini View")]
-    [SerializeField] Vector2 miniViewSize = new(220f, 120f);
-    [SerializeField] Vector2 miniViewOffset = new(0f, -80f);
+    [SerializeField] Vector2 miniViewSize = new(260f, 140f);
+    [SerializeField] Vector2 miniViewOffset = new(0f, -72f);
     [SerializeField] Color miniBackgroundColor = new(0f, 0f, 0f, 0.45f);
     [SerializeField] Color miniWaterColor = new(0.45f, 0.65f, 0.9f, 0.4f);
     [SerializeField] Color miniCanoeColor = new(0.88f, 0.42f, 0.18f, 0.9f);
@@ -60,7 +60,7 @@ public class BalanceMinigame : MonoBehaviour
     [SerializeField] float hitTargetKick      = 0.45f;
     [SerializeField] float hitTargetRecovery  = 1.4f;
     [SerializeField] float hitJitterDuration  = 0.75f;
-    [SerializeField] float hitJitterFrequency = 16f;
+    [SerializeField] float hitJitterFrequency = 5f;
     [SerializeField] float hitJitterAmplitude = 0.18f;
 
     Canvas canvas;
@@ -86,6 +86,15 @@ public class BalanceMinigame : MonoBehaviour
 
     public float Authority => authority;
     public float ManualLean => Mathf.Clamp(markerPos, -1f, 1f);
+    public bool InsideWindow => wasInside;
+    public float BalanceErrorNormalized
+    {
+        get
+        {
+            float half = Mathf.Max(TargetHalf, 1e-3f);
+            return Mathf.Clamp((markerPos - targetVisualPos) / half, -1f, 1f);
+        }
+    }
 
     public event Action<float> OnAuthorityChanged;
     public event Action<bool>  OnInsideWindowChanged;
@@ -196,9 +205,11 @@ public class BalanceMinigame : MonoBehaviour
 
         gaugeRect = new GameObject("BalanceGauge", typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
         gaugeRect.SetParent(canvas.transform, false);
-        gaugeRect.anchorMin = gaugeRect.anchorMax = new Vector2(0.5f, 0.15f); // bottom center
+        gaugeRect.anchorMin = gaugeRect.anchorMax = new Vector2(0.5f, 0.16f); // bottom center-ish
+        gaugeRect.pivot = new Vector2(0.5f, 0.5f);
         gaugeRect.sizeDelta = gaugeSize;
         gaugeRect.anchoredPosition = anchoredPosition;
+        gaugeRect.localRotation = Quaternion.identity;
         var gaugeImage = gaugeRect.GetComponent<Image>();
         gaugeImage.color = gaugeColor; gaugeImage.raycastTarget = false;
 

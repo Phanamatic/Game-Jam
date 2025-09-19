@@ -25,23 +25,24 @@ public class CanoePaddleController : MonoBehaviour
 
     [Header("Hydrodynamics")]
     [SerializeField] float waterDensity = 1000f;
-    [SerializeField] float bladeArea = 0.045f;
+    [SerializeField] float bladeArea = 0.055f;
     [SerializeField] float CdBase = 0.7f;
-    [SerializeField] float CdMax  = 1.2f;
-    [SerializeField] float fullSubmergeDepth = 0.20f;
-    [SerializeField] float minCatchSpeed = 0.25f;
+    [SerializeField] float CdMax  = 1.35f;
+    [SerializeField] float fullSubmergeDepth = 0.22f;
+    [SerializeField] float minCatchSpeed = 0.3f;
     [SerializeField] float catchRiseTime = 0.07f;
     [SerializeField] float releaseFallTime = 0.06f;
     [SerializeField] float forceSmoothRate = 14f;
-    [SerializeField] float yawBias = 0.25f;
+    [SerializeField] float yawBias = 0.45f;
+    [SerializeField] float forceMultiplier = 1.35f;
 
     [Header("Safety Caps")]
-    [SerializeField] float maxForceN = 220f;
-    [SerializeField] float maxTorqueNm = 350f;
-    [SerializeField] float maxLeverArm = 1.3f;
+    [SerializeField] float maxForceN = 320f;
+    [SerializeField] float maxTorqueNm = 420f;
+    [SerializeField] float maxLeverArm = 1.35f;
 
     [Header("Numerics")]
-    [SerializeField] float antiTeleportDist = 1.4f;
+    [SerializeField] float antiTeleportDist = 1.6f;
     [SerializeField] Vector3 bladeNormalLocal = Vector3.right;
 
     const float leanAngle = 8f, leanLerp = 6f;
@@ -147,7 +148,7 @@ public class CanoePaddleController : MonoBehaviour
                 float Cd = Mathf.Lerp(CdBase, CdMax, aoa01);
 
                 float F = 0.5f * waterDensity * Cd * bladeArea * subm * v * v * catchBlend;
-                force = -vPlane.normalized * F;
+                force = -vPlane.normalized * F * forceMultiplier;
 
                 if (force.magnitude > maxForceN) force = force.normalized * maxForceN;
             }

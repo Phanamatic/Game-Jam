@@ -3287,19 +3287,20 @@ MonoBehaviour:
   submergePitch: -35
   verticalDeadZone: 35
   waterDensity: 1000
-  bladeArea: 0.045
+  bladeArea: 0.055
   CdBase: 0.7
-  CdMax: 1.25
-  fullSubmergeDepth: 0.2
-  minCatchSpeed: 0.35
-  catchRiseTime: 0.08
+  CdMax: 1.35
+  fullSubmergeDepth: 0.22
+  minCatchSpeed: 0.3
+  catchRiseTime: 0.07
   releaseFallTime: 0.06
   forceSmoothRate: 14
   yawBias: 0.45
-  maxForceN: 220
-  maxTorqueNm: 350
-  maxLeverArm: 1.3
-  antiTeleportDist: 1.5
+  forceMultiplier: 1.35
+  maxForceN: 320
+  maxTorqueNm: 420
+  maxLeverArm: 1.35
+  antiTeleportDist: 1.6
   bladeNormalLocal: {x: 1, y: 0, z: 0}
 --- !u!54 &2113214471
 Rigidbody:
@@ -3472,17 +3473,17 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   referenceResolution: {x: 1920, y: 1080}
-  anchoredPosition: {x: 0, y: 0}
-  gaugeSize: {x: 86, y: 320}
-  targetWindowFraction: 0.38
-  markerFraction: 0.18
+  anchoredPosition: {x: 0, y: 120}
+  gaugeSize: {x: 560, y: 120}
+  targetWindowFraction: 0.32
+  markerFraction: 0.14
   markerHz: 3
   markerZeta: 1
   inputGain: 2.2
   recenterGain: 0.8
-  targetDriftSpeed: 1.15
-  targetNoiseAmp: 0.55
-  targetNoiseFreq: 0.8
+  targetDriftSpeed: 0.9
+  targetNoiseAmp: 0.35
+  targetNoiseFreq: 0.45
   rollInfluence: 0.65
   rollRateBoost: 0.4
   rollRateLowpass: 8
@@ -3493,8 +3494,8 @@ MonoBehaviour:
   windowColor: {r: 0.88, g: 0.9, b: 0.35, a: 0.85}
   markerSafeColor: {r: 0.2, g: 0.7, b: 1, a: 0.85}
   markerDangerColor: {r: 1, g: 0.3, b: 0.3, a: 0.85}
-  miniViewSize: {x: 220, y: 120}
-  miniViewOffset: {x: 0, y: -80}
+  miniViewSize: {x: 260, y: 140}
+  miniViewOffset: {x: 0, y: -72}
   miniBackgroundColor: {r: 0, g: 0, b: 0, a: 0.45}
   miniWaterColor: {r: 0.45, g: 0.65, b: 0.9, a: 0.4}
   miniCanoeColor: {r: 0.88, g: 0.42, b: 0.18, a: 0.9}
@@ -3508,7 +3509,7 @@ MonoBehaviour:
   hitTargetKick: 0.45
   hitTargetRecovery: 1.4
   hitJitterDuration: 0.75
-  hitJitterFrequency: 16
+  hitJitterFrequency: 5
   hitJitterAmplitude: 0.18
 --- !u!114 &2113214479
 MonoBehaviour:
@@ -3529,10 +3530,14 @@ MonoBehaviour:
   kp: 32
   kd: 6
   inputAccel: 120
-  maxBalanceAccel: 220
-  wobbleAccel: 10
-  wobbleHz: 0.35
-  wobbleChaos: 0.22
+  maxBalanceAccel: 320
+  wobbleAccel: 13
+  wobbleHz: 0.28
+  wobbleChaos: 0.2
+  wobbleAuthorityBoost: 2.6
+  imbalanceTorqueAccel: 170
+  imbalanceCurve: 1.45
+  imbalanceSmooth: 6.5
 --- !u!1 &2147398107
 GameObject:
   m_ObjectHideFlags: 0
