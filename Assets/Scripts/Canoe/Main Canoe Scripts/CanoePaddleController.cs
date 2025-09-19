@@ -1,248 +1,192 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-/* CanoePaddleController (improved hydrodynamics)
- * Replaces discrete impulses with continuous drag-based force:
- *   F = 0.5 * rho * Cd * A_eff * |v_rel|^2 in the plane of water, applied at blade tip.
- * Smooth catch/release, submersion-based area, optional yaw bias for steering feel.
- * Exposes tip speed and wet state for hit scaling.
+/* CanoePaddleController (transform-delta tip velocity, capped)
+ * Exposes LastTipSpeed and BladeWet for PaddleHitbox.
  */
 [RequireComponent(typeof(Rigidbody))]
 public class CanoePaddleController : MonoBehaviour
 {
-    /* ─── Scene refs ─── */
     [Header("Scene References")]
-    [SerializeField] Transform paddle;          // full paddle transform
-    [SerializeField] Transform starboardPivot;  // right-hand grip socket
-    [SerializeField] Transform portPivot;       // left-hand  grip socket
-    [SerializeField] Transform bladeTip;        // tip point; if null we approximate
-    [SerializeField] Transform playerVisual;    // optional lean visual root
-
-    [Header("Paddle Hitbox")]
-    [Tooltip("Trigger collider on the blade. Added automatically if missing.")]
+    [SerializeField] Transform paddle;
+    [SerializeField] Transform starboardPivot;
+    [SerializeField] Transform portPivot;
+    [SerializeField] Transform bladeTip;
+    [SerializeField] Transform playerVisual;
     [SerializeField] PaddleHitbox hitbox;
 
-    /* ─── Water & grip ─── */
     [Header("Water + Grip")]
-    [SerializeField] float waterLevel   = 0f;    // world Y of water surface
-    [SerializeField] float handleHeight = 0.25f; // vertical offset for hands
+    [SerializeField] float waterLevel = 0f;
+    [SerializeField] float handleHeight = 0.25f;
 
-    /* ─── Motion aiming ─── */
     [Header("Aiming")]
-    [SerializeField] float submergePitch = -45f; // when pressed
-    [SerializeField, Range(0,90)] float verticalDeadZone = 35f; // keep from stabbing down
+    [SerializeField] float submergePitch = -45f;
+    [SerializeField, Range(0,90)] float verticalDeadZone = 45f;
 
-    /* ─── Hydrodynamics ─── */
     [Header("Hydrodynamics")]
-    [SerializeField] float waterDensity     = 1000f; // kg/m^3
-    [SerializeField] float bladeArea        = 0.045f; // m^2 (typical canoe blade)
-    [SerializeField] float CdBase           = 0.7f;   // face not square to flow
-    [SerializeField] float CdMax            = 1.25f;  // face square to flow
-    [SerializeField] float yawBias          = 0.45f;  // extra yaw torque from lateral force
-    [SerializeField] float forceGain        = 1.00f;  // global gain knob
-    [SerializeField] float fullSubmergeDepth= 0.20f;  // depth for A_eff = bladeArea
-    [SerializeField] float minCatchSpeed    = 0.35f;  // m/s to start making useful force
-    [SerializeField] float catchRiseTime    = 0.08f;  // s ramp-in
-    [SerializeField] float releaseFallTime  = 0.06f;  // s ramp-out
-    [SerializeField] float forceSmoothing   = 12f;    // lerp-exp rate
-    [SerializeField] float antiTeleportDist = 0.65f;  // m/frame cap for tip delta
-    [SerializeField] float maxTipSpeed      = 4.5f;   // clamp relative speed for stability
-    [SerializeField] float maxLinearAccel   = 5.5f;   // m/s^2 cap to keep canoe controllable
-    [SerializeField] float maxYawTorque     = 120f;   // N·m clamp for steering bias
-    [Tooltip("Local blade face normal. Default assumes +X is blade face.")]
+    [SerializeField] float waterDensity = 1000f;
+    [SerializeField] float bladeArea = 0.045f;
+    [SerializeField] float CdBase = 0.7f;
+    [SerializeField] float CdMax  = 1.2f;
+    [SerializeField] float fullSubmergeDepth = 0.20f;
+    [SerializeField] float minCatchSpeed = 0.25f;
+    [SerializeField] float catchRiseTime = 0.07f;
+    [SerializeField] float releaseFallTime = 0.06f;
+    [SerializeField] float forceSmoothRate = 14f;
+    [SerializeField] float yawBias = 0.25f;
+
+    [Header("Safety Caps")]
+    [SerializeField] float maxForceN = 220f;
+    [SerializeField] float maxTorqueNm = 350f;
+    [SerializeField] float maxLeverArm = 1.3f;
+
+    [Header("Numerics")]
+    [SerializeField] float antiTeleportDist = 1.4f;
     [SerializeField] Vector3 bladeNormalLocal = Vector3.right;
 
-    [Header("Balance Interaction")]
-    [SerializeField, Range(0f, 1f)] float minCatchAuthority = 0.35f;
-    [SerializeField, Range(0f, 1f)] float minForceAuthority = 0.25f;
+    const float leanAngle = 8f, leanLerp = 6f;
 
-    /* ─── Lean tuning ─── */
-    const float leanAngle = 8f;  // avatar lean
-    const float leanLerp  = 6f;
-
-    /* ─── Internals ─── */
-    Rigidbody   rb;
-    CanoeBalance balance;
-    Vector3     lastTip;
-    Vector3     smoothedForce;
-    float       catchBlend;      // 0..1 gate for catch/release
-    bool        isLeftSide, prevLeftSide;
-    bool        prevBladeWet;
+    Rigidbody rb;
     InputAction click;
+    WaterEffectsManager waterFx;
 
-    WaterEffectsManager waterEffects;
+    Vector3 lastTipPos, smoothedForce;
+    float   catchBlend;
+    bool    isLeftSide, prevLeftSide, prevBladeWet;
 
-    // Public telemetry for hit scaling
     public float LastTipSpeed { get; private set; }
     public bool  BladeWet     { get; private set; }
 
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
-        balance = GetComponent<CanoeBalance>();
-        if (!paddle)
-        {
-            Debug.LogError("CanoePaddleController: assign 'paddle' Transform.");
-            enabled = false; return;
-        }
+        if (!paddle) { Debug.LogError("Assign 'paddle'"); enabled = false; return; }
 
-        if (!hitbox)
-        {
-            hitbox = paddle.GetComponent<PaddleHitbox>();
-            if (!hitbox) hitbox = paddle.gameObject.AddComponent<PaddleHitbox>();
-        }
+        if (!hitbox) hitbox = paddle.GetComponent<PaddleHitbox>() ?? paddle.gameObject.AddComponent<PaddleHitbox>();
         hitbox.BindOwner(this);
 
-        // Ignore paddle ↔ hull collisions
         foreach (var pc in paddle.GetComponentsInChildren<Collider>())
             foreach (var cc in GetComponentsInChildren<Collider>())
                 if (pc != cc) Physics.IgnoreCollision(pc, cc);
 
-        // Input
         click = new InputAction(type: InputActionType.Button, binding: "<Mouse>/leftButton");
         click.Enable();
 
-        waterEffects = Object.FindFirstObjectByType<WaterEffectsManager>();
+        waterFx = Object.FindFirstObjectByType<WaterEffectsManager>();
+    }
 
-        lastTip = PaddleTip();
+    void OnEnable()
+    {
+        lastTipPos = GetTipWorld();
+        smoothedForce = Vector3.zero;
+        catchBlend = 0f;
+        prevBladeWet = false;
+        prevLeftSide = isLeftSide;
     }
 
     void Update()
     {
-        // Mouse aims the paddle around screen center
-        var mouse = Mouse.current;
         Vector2 centre = new(Screen.width * .5f, Screen.height * .5f);
-        Vector2 dir2D  = mouse != null ? mouse.position.ReadValue() - centre : Vector2.right;
+        var m = Mouse.current;
+        Vector2 dir2D  = m != null ? m.position.ReadValue() - centre : Vector2.right;
         float   yawDeg = Mathf.Atan2(dir2D.y, dir2D.x) * Mathf.Rad2Deg * -1f;
 
         isLeftSide = dir2D.x < 0f;
-        Transform pivot   = isLeftSide ? portPivot : starboardPivot;
-        if (!pivot) pivot = transform; // safety fallback
-        Vector3   gripPos = pivot.position + Vector3.up * handleHeight;
+        Transform pivot = isLeftSide ? portPivot : starboardPivot;
+        if (!pivot) pivot = transform;
 
+        Vector3 gripPos = pivot.position + Vector3.up * handleHeight;
         float pitch = Mathf.Lerp(0f, submergePitch, click.IsPressed() ? 1f : 0f);
-        paddle.SetPositionAndRotation(
-            gripPos,
-            transform.rotation * Quaternion.Euler(pitch, yawDeg, 0f));
+        paddle.SetPositionAndRotation(gripPos, transform.rotation * Quaternion.Euler(pitch, yawDeg, 0f));
 
-        // Cosmetic lean
         if (playerVisual)
         {
-            float targetLean = (isLeftSide ? -leanAngle : leanAngle);
+            float targetLean = isLeftSide ? -leanAngle : leanAngle;
             Vector3 e = playerVisual.localEulerAngles;
-            float zSrc = (e.z > 180 ? e.z - 360 : e.z);
-            float newZ = Mathf.Lerp(zSrc, targetLean, leanLerp * Time.deltaTime);
+            float z = (e.z > 180 ? e.z - 360 : e.z);
+            float newZ = Mathf.Lerp(z, targetLean, leanLerp * Time.deltaTime);
             playerVisual.localRotation = Quaternion.Euler(e.x, e.y, newZ);
         }
     }
 
     void FixedUpdate()
     {
-        Vector3 tip = PaddleTip();
         float dt = Time.fixedDeltaTime;
+        Vector3 tip = GetTipWorld();
 
-        // Reset tip history on side swap to avoid spikes
-        if (isLeftSide != prevLeftSide)
-        {
-            lastTip = tip;
-            prevLeftSide = isLeftSide;
-        }
+        if (isLeftSide != prevLeftSide) { prevLeftSide = isLeftSide; lastTipPos = tip; smoothedForce = Vector3.zero; }
 
-        // Tip velocity from transform motion (not Rigidbody)
-        Vector3 rawDelta = tip - lastTip;
-        if (rawDelta.magnitude > antiTeleportDist) rawDelta = rawDelta.normalized * antiTeleportDist;
-        Vector3 tipVel = rawDelta / Mathf.Max(1e-5f, dt);
+        Vector3 delta = tip - lastTipPos;
+        float maxDelta = antiTeleportDist;
+        if (delta.magnitude > maxDelta) delta = delta.normalized * maxDelta;
+        Vector3 tipVel = delta / Mathf.Max(1e-5f, dt);
         LastTipSpeed = tipVel.magnitude;
 
-        // Wet check with small depth threshold
         float depth = Mathf.Max(0f, waterLevel - tip.y);
-        float submFactor = Mathf.Clamp01(depth / Mathf.Max(0.001f, fullSubmergeDepth));
-        BladeWet = click.IsPressed() && depth > 0.02f;
+        float subm  = Mathf.Clamp01(depth / Mathf.Max(0.001f, fullSubmergeDepth));
 
-        float balanceAuthority = balance ? balance.CurrentAuthority : 1f;
-        float catchAuthority = Mathf.Lerp(minCatchAuthority, 1f, balanceAuthority);
-        float forceAuthority = Mathf.Lerp(minForceAuthority, 1f, balanceAuthority);
+        bool press = click.IsPressed();
+        float angleFromHoriz = Vector3.Angle(tipVel, Vector3.ProjectOnPlane(tipVel, Vector3.up));
+        bool horizontalEnough = angleFromHoriz < verticalDeadZone;
+        BladeWet = press && depth > 0.02f && LastTipSpeed > 0.01f && horizontalEnough;
 
-        // Catch/release blend
         float targetCatch = (BladeWet && LastTipSpeed > minCatchSpeed) ? 1f : 0f;
-        targetCatch *= catchAuthority;
         float tau = targetCatch > catchBlend ? catchRiseTime : releaseFallTime;
         catchBlend = LerpExp(catchBlend, targetCatch, tau, dt);
 
-        // Hydrodynamic force when wet
-        Vector3 hydroForce = Vector3.zero;
-        if (catchBlend > 0f)
+        Vector3 force = Vector3.zero;
+        if (catchBlend > 0f && subm > 0f)
         {
-            // Project velocity onto water plane to avoid unrealistic vertical thrust
             Vector3 vPlane = Vector3.ProjectOnPlane(tipVel, Vector3.up);
-            float   vMag   = vPlane.magnitude;
-
-            if (vMag > maxTipSpeed)
+            float v = vPlane.magnitude;
+            if (v > 1e-3f)
             {
-                vPlane = vPlane.normalized * maxTipSpeed;
-                vMag = maxTipSpeed;
-            }
+                Vector3 faceN = paddle.TransformDirection(bladeNormalLocal).normalized;
+                float aoa = Vector3.Angle(faceN, vPlane.normalized);
+                float aoa01 = Mathf.Clamp01(Mathf.Sin(aoa * Mathf.Deg2Rad));
+                float Cd = Mathf.Lerp(CdBase, CdMax, aoa01);
 
-            if (vMag > 1e-3f)
-            {
-                // Angle of attack based on blade face vs motion
-                Vector3 bladeNormal = paddle.TransformDirection(bladeNormalLocal).normalized;
-                float aoa = Vector3.Angle(bladeNormal, vPlane.normalized); // 0..180
-                float aoa01 = Mathf.Clamp01(Mathf.Sin(aoa * Mathf.Deg2Rad)); // 0 at 0°, 1 at 90°
+                float F = 0.5f * waterDensity * Cd * bladeArea * subm * v * v * catchBlend;
+                force = -vPlane.normalized * F;
 
-                float Cd = Mathf.Lerp(CdBase, CdMax, aoa01); // more face-on -> higher drag
-                float areaEff = bladeArea * submFactor;
-
-                float forceMag = 0.5f * waterDensity * Cd * areaEff * vMag * vMag * forceGain * catchBlend * forceAuthority;
-                Vector3 dragDir = -vPlane.normalized; // resist motion
-                hydroForce = dragDir * forceMag;
-
-                float maxForce = Mathf.Max(0f, rb.mass * maxLinearAccel * forceAuthority);
-                if (maxForce > 0f && hydroForce.sqrMagnitude > maxForce * maxForce)
-                    hydroForce = hydroForce.normalized * maxForce;
-
-                // Optional yaw bias: convert lateral component into extra yaw torque
-                float lateral = Vector3.Dot(hydroForce, transform.right);
-                float yawMag = Mathf.Clamp(lateral * yawBias, -maxYawTorque * forceAuthority, maxYawTorque * forceAuthority);
-                Vector3 yawTorque = Vector3.up * yawMag;
-                rb.AddTorque(yawTorque, ForceMode.Force);
+                if (force.magnitude > maxForceN) force = force.normalized * maxForceN;
             }
         }
 
-        // Smooth the applied force to remove jitter
-        smoothedForce = Vector3.Lerp(smoothedForce, hydroForce, 1f - Mathf.Exp(-forceSmoothing * dt));
+        smoothedForce = Vector3.Lerp(smoothedForce, force, 1f - Mathf.Exp(-forceSmoothRate * dt));
 
-        // Apply at the tip for realistic torque
         if (smoothedForce.sqrMagnitude > 0f)
-            rb.AddForceAtPosition(smoothedForce, tip, ForceMode.Force);
-
-        // Water effects
-        if (BladeWet && !prevBladeWet && waterEffects != null)
-            waterEffects.OnWaterCollision(tip, 1.25f); // catch splash
-
-        if (BladeWet && waterEffects != null && LastTipSpeed > minCatchSpeed * 1.25f)
         {
-            float rip = Mathf.Clamp01(LastTipSpeed / 3f) * submFactor * 0.7f;
-            if (rip > 0.05f) waterEffects.OnWaterCollision(tip, rip);
+            Vector3 r = tip - rb.worldCenterOfMass;
+            if (r.magnitude > maxLeverArm) r = r.normalized * maxLeverArm;
+
+            Vector3 torque = Vector3.Cross(r, smoothedForce);
+            float tMag = torque.magnitude;
+            if (tMag > maxTorqueNm)
+            {
+                float scale = maxTorqueNm / Mathf.Max(1e-5f, tMag);
+                smoothedForce *= scale; torque *= scale;
+            }
+
+            rb.AddForceAtPosition(smoothedForce, rb.worldCenterOfMass + r, ForceMode.Force);
+
+            float lateral = Vector3.Dot(smoothedForce, transform.right);
+            if (Mathf.Abs(lateral) > 0.01f)
+                rb.AddTorque(Vector3.up * (lateral * yawBias), ForceMode.Force);
+        }
+
+        if (BladeWet && !prevBladeWet && waterFx) waterFx.OnWaterCollision(tip, 1.1f);
+        if (BladeWet && waterFx && LastTipSpeed > minCatchSpeed * 1.25f)
+        {
+            float rip = Mathf.Clamp01(LastTipSpeed / 3f) * subm * 0.6f;
+            if (rip > 0.04f) waterFx.OnWaterCollision(tip, rip);
         }
 
         prevBladeWet = BladeWet;
-        lastTip = tip;
+        lastTipPos = tip;
     }
 
-    Vector3 PaddleTip()
-    {
-        if (bladeTip) return bladeTip.position;
-        // Fallback: estimate tip along +forward at ~blade length of 1.5 m
-        return paddle.position + paddle.forward * 1.5f;
-    }
-
-    static float LerpExp(float current, float target, float timeConstant, float dt)
-    {
-        if (timeConstant <= 0f) return target;
-        float k = 1f - Mathf.Exp(-dt / timeConstant);
-        return current + (target - current) * k;
-    }
-
+    Vector3 GetTipWorld(){ return bladeTip ? bladeTip.position : paddle.position + paddle.forward * 1.5f; }
+    static float LerpExp(float current, float target, float timeConstant, float dt){ if (timeConstant<=0f) return target; float k=1f-Mathf.Exp(-dt/timeConstant); return current + (target-current)*k; }
     public bool PaddleLeftSide => isLeftSide;
 }
