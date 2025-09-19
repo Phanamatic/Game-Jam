@@ -13,7 +13,11 @@ public class BalanceMinigame : MonoBehaviour
     [Header("UI Layout")]
     [SerializeField] Vector2 referenceResolution = new(1920f, 1080f);
     [SerializeField] Vector2 anchoredPosition   = new(0f, 0f);
-    [SerializeField] Vector2 gaugeSize          = new(320f, 86f); // width, height
+    [SerializeField] Vector2 gaugeSize          = new(640f, 120f); // width, height
+    [SerializeField] Vector2 gaugeAnchor        = new(0.5f, 0.18f);
+    [SerializeField] float gaugeFramePadding    = 28f;
+    [SerializeField] Color gaugeFrameColor      = new(0f, 0f, 0f, 0.45f);
+    [SerializeField] Color gaugeFillColor       = new(1f, 1f, 1f, 0.12f);
     [SerializeField, Range(0.15f, 0.9f)] float targetWindowFraction = 0.38f;
     [SerializeField, Range(0.08f, 0.6f)] float markerFraction       = 0.18f;
 
@@ -64,8 +68,8 @@ public class BalanceMinigame : MonoBehaviour
     [SerializeField] float hitJitterAmplitude = 0.18f;
 
     Canvas canvas;
-    RectTransform gaugeRect, targetRect, markerRect;
-    Image markerImage;
+    RectTransform frameRect, gaugeRect, targetRect, markerRect, gaugeFillRect;
+    Image markerImage, gaugeFillImage;
 
     RectTransform miniRoot, miniCanoeRect, miniBubbleRect;
     Image miniBubbleImage, miniWaterImage;
@@ -78,6 +82,7 @@ public class BalanceMinigame : MonoBehaviour
 
     // Meters
     float authority, rollBias, rollDegrees, windowScale = 1f, hitOffset, hitJitterTimer;
+    float instability, targetOffset;
     float miniBubbleBaseY;
     Vector2 targetBaseSize;
 
@@ -86,6 +91,12 @@ public class BalanceMinigame : MonoBehaviour
 
     public float Authority => authority;
     public float ManualLean => Mathf.Clamp(markerPos, -1f, 1f);
+    public float Instability => Mathf.Clamp01(instability);
+    public float TargetOffset => targetOffset;
+    public float RollBias => rollBias;
+    public float MarkerNormalized => markerPos;
+    public float TargetNormalized => targetVisualPos;
+    public bool  InsideWindow => wasInside;
 
     public event Action<float> OnAuthorityChanged;
     public event Action<bool>  OnInsideWindowChanged;
@@ -99,9 +110,9 @@ public class BalanceMinigame : MonoBehaviour
     {
         if (!canvas) return;
         Destroy(canvas.gameObject); canvas=null;
-        gaugeRect=targetRect=markerRect=null;
+        frameRect=gaugeRect=targetRect=markerRect=gaugeFillRect=null;
         miniRoot=miniCanoeRect=miniBubbleRect=null;
-        miniBubbleImage=miniWaterImage=markerImage=null;
+        miniBubbleImage=miniWaterImage=markerImage=gaugeFillImage=null;
     }
 
     // —— Public API ——
@@ -120,6 +131,7 @@ public class BalanceMinigame : MonoBehaviour
     {
         markerPos=markerVel=markerTarget=0f; targetPos=targetVisualPos=0f;
         authority=1f; windowScale=1f; hitOffset=0f; hitJitterTimer=0f;
+        instability = 0f; targetOffset = 0f;
         UpdateVisuals(); RaiseInsideWindow(true); OnAuthorityChanged?.Invoke(authority);
     }
 
@@ -171,6 +183,8 @@ public class BalanceMinigame : MonoBehaviour
         // Authority
         float dist = Mathf.Abs(markerPos - targetVisualPos);
         float raw = Mathf.Clamp01((windowHalf - dist)/Mathf.Max(windowHalf,1e-3f));
+        instability = 1f - raw;
+        targetOffset = targetVisualPos - markerPos;
         float curved = Mathf.Pow(raw, authorityCurve);
         float aLerp = 1f - Mathf.Exp(-authoritySmooth * dt);
         float prev = authority;
@@ -192,15 +206,33 @@ public class BalanceMinigame : MonoBehaviour
         var scaler = canvas.gameObject.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = referenceResolution;
+        scaler.matchWidthOrHeight = 0.5f;
         canvas.gameObject.AddComponent<GraphicRaycaster>();
 
+        frameRect = new GameObject("BalanceGaugeFrame", typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
+        frameRect.SetParent(canvas.transform, false);
+        frameRect.anchorMin = frameRect.anchorMax = gaugeAnchor;
+        frameRect.sizeDelta = gaugeSize + new Vector2(gaugeFramePadding * 2f, gaugeFramePadding * 2f);
+        frameRect.anchoredPosition = anchoredPosition;
+        var frameImage = frameRect.GetComponent<Image>();
+        frameImage.color = gaugeFrameColor; frameImage.raycastTarget = false;
+
         gaugeRect = new GameObject("BalanceGauge", typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
-        gaugeRect.SetParent(canvas.transform, false);
-        gaugeRect.anchorMin = gaugeRect.anchorMax = new Vector2(0.5f, 0.15f); // bottom center
+        gaugeRect.SetParent(frameRect, false);
+        gaugeRect.anchorMin = gaugeRect.anchorMax = new Vector2(0.5f, 0.5f);
         gaugeRect.sizeDelta = gaugeSize;
-        gaugeRect.anchoredPosition = anchoredPosition;
+        gaugeRect.anchoredPosition = Vector2.zero;
         var gaugeImage = gaugeRect.GetComponent<Image>();
         gaugeImage.color = gaugeColor; gaugeImage.raycastTarget = false;
+
+        gaugeFillRect = new GameObject("GaugeFill", typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
+        gaugeFillRect.SetParent(gaugeRect, false);
+        gaugeFillRect.anchorMin = new Vector2(0f, 0.5f);
+        gaugeFillRect.anchorMax = new Vector2(1f, 0.5f);
+        gaugeFillRect.sizeDelta = new Vector2(0f, gaugeSize.y * 0.45f);
+        gaugeFillRect.anchoredPosition = Vector2.zero;
+        gaugeFillImage = gaugeFillRect.GetComponent<Image>();
+        gaugeFillImage.color = gaugeFillColor; gaugeFillImage.raycastTarget = false;
 
         targetRect = new GameObject("TargetWindow", typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
         targetRect.SetParent(gaugeRect, false);
@@ -264,6 +296,18 @@ public class BalanceMinigame : MonoBehaviour
     {
         if (!gaugeRect || !markerRect || !targetRect) return;
 
+        if (frameRect)
+        {
+            frameRect.anchorMin = frameRect.anchorMax = gaugeAnchor;
+            frameRect.sizeDelta = gaugeSize + new Vector2(gaugeFramePadding * 2f, gaugeFramePadding * 2f);
+            frameRect.anchoredPosition = anchoredPosition;
+        }
+
+        gaugeRect.sizeDelta = gaugeSize;
+
+        if (gaugeFillRect)
+            gaugeFillRect.sizeDelta = new Vector2(0f, gaugeSize.y * 0.45f);
+
         float gaugeHalf = gaugeRect.sizeDelta.x * 0.5f; // horizontal extent
 
         // Marker width scales; move along X
@@ -280,6 +324,14 @@ public class BalanceMinigame : MonoBehaviour
         // Colors
         float danger = Mathf.Clamp01((dangerAuthority - authority) / Mathf.Max(dangerAuthority, 1e-3f));
         markerImage.color = Color.Lerp(markerSafeColor, markerDangerColor, danger);
+
+        if (gaugeFillImage)
+        {
+            float wobble = Mathf.Lerp(1f, 1.6f, Mathf.Clamp01(instability));
+            Color fill = gaugeFillColor;
+            fill.a *= wobble;
+            gaugeFillImage.color = fill;
+        }
 
         UpdateMiniView();
     }

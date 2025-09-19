@@ -24,15 +24,25 @@ public class CanoeBalanceAdapter : MonoBehaviour
     [SerializeField] float kd = 6f;  // Nm/(deg/s)
 
     [Header("Player Control")]
-    [SerializeField] float inputAccel = 120f;   // Nm/s from minigame lean
-    [SerializeField] float maxBalanceAccel = 220f; // Nm/s clamp
+    [SerializeField] float inputAccel = 165f;   // Nm/s from minigame lean
+    [SerializeField] float maxBalanceAccel = 320f; // Nm/s clamp
+    [SerializeField, Range(0f,1f)] float minInputAuthority = 0.2f;
+    [SerializeField] float inputAuthorityPower = 0.65f;
+
+    [Header("Stability Response")]
+    [SerializeField, Range(0f,1f)] float minPdAuthority = 0.06f;
+    [SerializeField] float pdAuthorityPower = 0.7f;
+    [SerializeField] float destabilizeBiasAccel = 60f;
+    [SerializeField] float destabilizeOffsetAccel = 75f;
 
     [Header("Wobble")]
-    [SerializeField] float wobbleAccel = 10f;  // Nm/s
-    [SerializeField] float wobbleHz = 0.35f;
+    [SerializeField] float wobbleAccel = 14f;  // Nm/s
+    [SerializeField] float wobbleHz = 0.42f;
     [SerializeField] float wobbleChaos = 0.22f;
+    [SerializeField] float wobbleSlew = 1.6f;
 
     Rigidbody rb;
+    float wobblePhase, wobbleEnvelope;
 
     void Awake()
     {
@@ -40,6 +50,12 @@ public class CanoeBalanceAdapter : MonoBehaviour
         if (!ui)      ui = FindFirstObjectByType<BalanceMinigame>();
         if (!health)  health = GetComponent<PlayerHealth>();
         if (rb.angularDamping < 0.08f) rb.angularDamping = 0.08f;
+    }
+
+    void OnEnable()
+    {
+        wobblePhase = Random.value * Mathf.PI * 2f;
+        wobbleEnvelope = 0f;
     }
 
     void FixedUpdate()
@@ -60,22 +76,37 @@ public class CanoeBalanceAdapter : MonoBehaviour
         // Player input from UI
         float authority = ui ? ui.Authority : 1f;           // 0..1
         float lean      = ui ? ui.ManualLean : 0f;          // -1..1
+        float instability = ui ? ui.Instability : 0f;
+        float instability01 = Mathf.Clamp01(instability);
+        float instabilityCurve = Mathf.SmoothStep(0f, 1f, instability01);
 
-        // PD toward upright, partially reduced when out of window
-        float pdScale   = Mathf.Lerp(0.25f, 1f, authority); // never zero
-        float pdTorque  = -(kp * rollDeg + kd * rollRate) * pdScale;
+        float authorityClamped = Mathf.Clamp01(authority);
+        float bias = ui ? ui.RollBias : Mathf.Clamp(rollDeg / Mathf.Max(1f, capsizeAngle), -1f, 1f);
+        float targetOffset = ui ? Mathf.Clamp(ui.TargetOffset, -1f, 1f) : 0f;
 
-        // Player torque scaled by authority
-        float playerTorque = -lean * inputAccel * authority;
+        // PD toward upright, heavily reduced when out of balance
+        float pdAuthority = Mathf.Lerp(minPdAuthority, 1f, Mathf.Pow(authorityClamped, pdAuthorityPower));
+        pdAuthority *= Mathf.Lerp(1f, 0.35f, instabilityCurve);
+        float pdTorque  = -(kp * rollDeg + kd * rollRate) * pdAuthority;
 
-        // Small wobble
-        float t = Time.time;
-        float wobSin = Mathf.Sin(t * wobbleHz * Mathf.PI * 2f);
-        float wobPer = Mathf.PerlinNoise(t * wobbleHz, t * wobbleChaos) * 2f - 1f;
-        float wobble = (wobSin * (1f + 0.5f * wobPer)) * wobbleAccel;
+        // Player torque scaled by authority but never fully zeroed
+        float inputAuthority = Mathf.Lerp(minInputAuthority, 1f, Mathf.Pow(authorityClamped, inputAuthorityPower));
+        float playerTorque = -lean * inputAccel * inputAuthority;
+
+        // Smooth wobble signal without harsh jitter
+        wobblePhase += Mathf.Max(0.05f, wobbleHz) * Mathf.PI * 2f * dt;
+        wobblePhase = Mathf.Repeat(wobblePhase, Mathf.PI * 2f);
+        float wobbleNoise = Mathf.PerlinNoise(Time.time * wobbleChaos, 0.37f) * 2f - 1f;
+        float wobbleLerp = 1f - Mathf.Exp(-Mathf.Max(0.01f, wobbleSlew) * dt);
+        wobbleEnvelope = Mathf.Lerp(wobbleEnvelope, wobbleNoise, wobbleLerp);
+        float wobble = Mathf.Sin(wobblePhase) * wobbleAccel * (0.55f + 0.45f * Mathf.Abs(wobbleEnvelope));
+        wobble *= Mathf.Lerp(0.6f, 1.8f, instabilityCurve);
+
+        // Push the canoe over when the player fails the minigame
+        float failureTorque = (bias * destabilizeBiasAccel + targetOffset * destabilizeOffsetAccel) * instabilityCurve;
 
         // Sum + clamp
-        float totalNmPerSec = Mathf.Clamp(pdTorque + playerTorque + wobble, -maxBalanceAccel, maxBalanceAccel);
+        float totalNmPerSec = Mathf.Clamp(pdTorque + playerTorque + wobble + failureTorque, -maxBalanceAccel, maxBalanceAccel);
         rb.AddRelativeTorque(Vector3.forward * totalNmPerSec, ForceMode.Acceleration);
 
         // Capsize check

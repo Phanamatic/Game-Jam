@@ -30,14 +30,15 @@ public class CanoePaddleController : MonoBehaviour
     [SerializeField] float CdMax  = 1.2f;
     [SerializeField] float fullSubmergeDepth = 0.20f;
     [SerializeField] float minCatchSpeed = 0.25f;
-    [SerializeField] float catchRiseTime = 0.07f;
-    [SerializeField] float releaseFallTime = 0.06f;
-    [SerializeField] float forceSmoothRate = 14f;
-    [SerializeField] float yawBias = 0.25f;
+    [SerializeField] float catchRiseTime = 0.05f;
+    [SerializeField] float releaseFallTime = 0.05f;
+    [SerializeField] float forceSmoothRate = 18f;
+    [SerializeField] float yawBias = 0.3f;
+    [SerializeField] float thrustMultiplier = 1.35f;
 
     [Header("Safety Caps")]
-    [SerializeField] float maxForceN = 220f;
-    [SerializeField] float maxTorqueNm = 350f;
+    [SerializeField] float maxForceN = 320f;
+    [SerializeField] float maxTorqueNm = 520f;
     [SerializeField] float maxLeverArm = 1.3f;
 
     [Header("Numerics")]
@@ -147,7 +148,7 @@ public class CanoePaddleController : MonoBehaviour
                 float Cd = Mathf.Lerp(CdBase, CdMax, aoa01);
 
                 float F = 0.5f * waterDensity * Cd * bladeArea * subm * v * v * catchBlend;
-                force = -vPlane.normalized * F;
+                force = -vPlane.normalized * F * thrustMultiplier;
 
                 if (force.magnitude > maxForceN) force = force.normalized * maxForceN;
             }
