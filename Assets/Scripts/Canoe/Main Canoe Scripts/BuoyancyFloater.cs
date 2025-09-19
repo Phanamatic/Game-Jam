@@ -32,15 +32,6 @@ public class BuoyancyFloater : MonoBehaviour
     [Tooltip("Max total force applied this FixedUpdate to avoid spikes.")]
     [SerializeField] float maxStepForce = 4000f;
 
-    [Header("Stabilization")]
-    [Tooltip("Applies a gentle torque to keep the craft's local up axis aligned with world up.")]
-    [SerializeField] bool stabilizeUpright = true;
-    [Tooltip("Local axis that should point up when the canoe is upright.")]
-    [SerializeField] Vector3 localUpAxis = Vector3.up;
-    [SerializeField] float uprightTorqueStrength = 45f;
-    [SerializeField] float uprightTorqueDamping = 8f;
-    [SerializeField] float maxUprightTorque = 1500f;
-
     Rigidbody rb;
     float defaultDrag, defaultAngularDrag;
 
@@ -49,7 +40,6 @@ public class BuoyancyFloater : MonoBehaviour
         rb = GetComponent<Rigidbody>();
         defaultDrag = rb.linearDamping;
         defaultAngularDrag = rb.angularDamping;
-        EnsureLocalUpAxis();
     }
 
     void FixedUpdate()
@@ -109,11 +99,6 @@ public class BuoyancyFloater : MonoBehaviour
         float subRatio = Mathf.Clamp01(subFracAccum / Mathf.Max(1, floatPoints.Length));
         rb.angularDamping = Mathf.Lerp(defaultAngularDrag, waterAngularDrag, subRatio);
         rb.linearDamping        = Mathf.Lerp(defaultDrag,        waterLinearDrag,  subRatio * 0.5f);
-
-        if (stabilizeUpright)
-        {
-            ApplyUprightTorque();
-        }
     }
 
     void OnDrawGizmosSelected()
@@ -135,53 +120,6 @@ public class BuoyancyFloater : MonoBehaviour
                 Gizmos.color = pos.y < waterLevelY ? Color.cyan : Color.gray;
                 Gizmos.DrawSphere(pos, 0.04f);
             }
-        }
-    }
-
-    void OnValidate()
-    {
-        EnsureLocalUpAxis();
-        uprightTorqueStrength = Mathf.Max(0f, uprightTorqueStrength);
-        uprightTorqueDamping = Mathf.Max(0f, uprightTorqueDamping);
-        maxUprightTorque = Mathf.Max(0f, maxUprightTorque);
-    }
-
-    void EnsureLocalUpAxis()
-    {
-        if (localUpAxis.sqrMagnitude < 1e-6f)
-            localUpAxis = Vector3.up;
-    }
-
-    void ApplyUprightTorque()
-    {
-        Vector3 craftUp = transform.TransformDirection(localUpAxis);
-        if (craftUp.sqrMagnitude < 1e-6f)
-            return;
-        craftUp.Normalize();
-
-        Vector3 worldUp = Vector3.up;
-        Vector3 torqueAxis = Vector3.Cross(craftUp, worldUp);
-        float angle = torqueAxis.magnitude; // ~sin(theta)
-
-        Vector3 corrective = Vector3.zero;
-        if (angle > 1e-5f)
-        {
-            Vector3 torqueDir = torqueAxis.normalized;
-            corrective = torqueDir * (angle * uprightTorqueStrength);
-        }
-
-        Vector3 angularTilt = Vector3.ProjectOnPlane(rb.angularVelocity, craftUp);
-        corrective -= angularTilt * uprightTorqueDamping;
-
-        float mag = corrective.magnitude;
-        if (mag > 1e-5f && maxUprightTorque > 0f && mag > maxUprightTorque)
-        {
-            corrective = corrective / mag * maxUprightTorque;
-        }
-
-        if (corrective.sqrMagnitude > 1e-8f)
-        {
-            rb.AddTorque(corrective, ForceMode.Force);
         }
     }
 }

@@ -40,12 +40,6 @@ public class PaddleSystem : MonoBehaviour
     [Tooltip("How quickly the paddle root rotates to face the aim point (rot).")]
     [SerializeField] float orbitRotLerp = 18f;
 
-    [Header("Model Orientation")]
-    [Tooltip("Local axis on the paddle root that should face the aim point.")]
-    [SerializeField] Vector3 localForwardAxis = Vector3.forward;
-    [Tooltip("Local axis treated as up for the paddle root.")]
-    [SerializeField] Vector3 localUpAxis = Vector3.up;
-
     [Header("Water")]
     [SerializeField] float waterLevelY = 0f;     // World Y of flat water
     [SerializeField] float submergeDepth = 0.18f;// Constant tip depth below water when clicked
@@ -69,16 +63,10 @@ public class PaddleSystem : MonoBehaviour
     Vector3 _tipVel;              // World velocity of blade tip (per fixed step)
     float _dipBlend;              // 0..1 smooth dip factor
     bool _pressed;                // mouse down state captured in Update
-    Quaternion _modelAlignment = Quaternion.identity; // Aligns custom local axes with look rotation
 
     void Reset()
     {
         cam = Camera.main;
-    }
-
-    void OnValidate()
-    {
-        _modelAlignment = ComputeModelAlignment();
     }
 
     void Awake()
@@ -92,8 +80,6 @@ public class PaddleSystem : MonoBehaviour
                 orbitRadius = Vector3.Distance(paddleRoot.position, canoe.position);
         }
         if (bladeTip) _lastTipPos = bladeTip.position;
-
-        _modelAlignment = ComputeModelAlignment();
     }
 
     void Update()
@@ -140,11 +126,7 @@ public class PaddleSystem : MonoBehaviour
         Vector3 fwd = (_targetWorld - paddleRoot.position);
         if (fwd.sqrMagnitude < 0.0001f) fwd = paddleRoot.forward;
         Quaternion look = Quaternion.LookRotation(fwd.normalized, Vector3.up);
-        Quaternion targetRot = look * _modelAlignment;
-        paddleRoot.rotation = Quaternion.Slerp(
-            paddleRoot.rotation,
-            targetRot,
-            1f - Mathf.Exp(-orbitRotLerp * Time.deltaTime));
+        paddleRoot.rotation = Quaternion.Slerp(paddleRoot.rotation, look, 1f - Mathf.Exp(-orbitRotLerp * Time.deltaTime));
 
         // 6) Enforce blade tip depth visually while pressed: nudge blade along its local -Y (or shaft normal)
         //    We do not write directly to physics. This is a visual transform edit.
@@ -231,40 +213,5 @@ public class PaddleSystem : MonoBehaviour
             Gizmos.color = Color.red;
             Gizmos.DrawLine(bladeTip.position, bladeTip.position + _tipVel * 0.1f);
         }
-    }
-
-    Quaternion ComputeModelAlignment()
-    {
-        Quaternion modelOrientation = BuildOrientation(localForwardAxis, localUpAxis);
-        return Quaternion.Inverse(modelOrientation);
-    }
-
-    static Quaternion BuildOrientation(Vector3 forward, Vector3 up)
-    {
-        forward = SafeNormalize(forward, Vector3.forward);
-        up = SafeNormalize(up, Vector3.up);
-
-        // Ensure orthonormal basis even if axes were not perpendicular
-        Vector3 right = Vector3.Cross(up, forward);
-        if (right.sqrMagnitude < 1e-6f)
-        {
-            Vector3 fallback = Mathf.Abs(Vector3.Dot(forward, Vector3.up)) > 0.9f ? Vector3.right : Vector3.up;
-            right = Vector3.Cross(fallback, forward);
-        }
-        right = SafeNormalize(right, Vector3.right);
-        up = Vector3.Cross(forward, right).normalized;
-
-        return Quaternion.LookRotation(forward, up);
-    }
-
-    static Vector3 SafeNormalize(Vector3 v, Vector3 fallback)
-    {
-        if (v.sqrMagnitude < 1e-6f)
-        {
-            if (fallback.sqrMagnitude < 1e-6f)
-                fallback = Vector3.forward;
-            return fallback.normalized;
-        }
-        return v.normalized;
     }
 }
