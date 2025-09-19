@@ -27,17 +27,17 @@ public class CanoePaddleController : MonoBehaviour
     [SerializeField] float waterDensity = 1000f;
     [SerializeField] float bladeArea = 0.045f;
     [SerializeField] float CdBase = 0.7f;
-    [SerializeField] float CdMax  = 1.2f;
+    [SerializeField] float CdMax  = 1.35f;
     [SerializeField] float fullSubmergeDepth = 0.20f;
     [SerializeField] float minCatchSpeed = 0.25f;
     [SerializeField] float catchRiseTime = 0.07f;
     [SerializeField] float releaseFallTime = 0.06f;
-    [SerializeField] float forceSmoothRate = 14f;
-    [SerializeField] float yawBias = 0.25f;
+    [SerializeField] float forceSmoothRate = 18f;
+    [SerializeField] float yawBias = 0.32f;
 
     [Header("Safety Caps")]
-    [SerializeField] float maxForceN = 220f;
-    [SerializeField] float maxTorqueNm = 350f;
+    [SerializeField] float maxForceN = 310f;
+    [SerializeField] float maxTorqueNm = 420f;
     [SerializeField] float maxLeverArm = 1.3f;
 
     [Header("Numerics")]

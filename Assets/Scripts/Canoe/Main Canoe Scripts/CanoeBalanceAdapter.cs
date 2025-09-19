@@ -24,27 +24,74 @@ public class CanoeBalanceAdapter : MonoBehaviour
     [SerializeField] float kd = 6f;  // Nm/(deg/s)
 
     [Header("Player Control")]
-    [SerializeField] float inputAccel = 120f;   // Nm/s from minigame lean
-    [SerializeField] float maxBalanceAccel = 220f; // Nm/s clamp
+    [SerializeField] float inputAccel = 140f;   // Nm/s from minigame lean
+    [SerializeField] float maxBalanceAccel = 320f; // Nm/s clamp
 
     [Header("Wobble")]
-    [SerializeField] float wobbleAccel = 10f;  // Nm/s
-    [SerializeField] float wobbleHz = 0.35f;
-    [SerializeField] float wobbleChaos = 0.22f;
+    [SerializeField] float wobbleAccel = 12f;  // Nm/s
+    [SerializeField] float wobbleHz = 0.3f;
+    [SerializeField] float wobbleChaos = 0.18f;
+    [SerializeField] float wobbleInstabilityBonus = 45f;
+
+    [Header("Instability")]
+    [SerializeField] float instabilityGrowth = 1.8f;
+    [SerializeField] float instabilityDecay = 0.9f;
+    [SerializeField] float authorityInstability = 1.4f;
+    [SerializeField] float instabilityTorque = 65f;
 
     Rigidbody rb;
+    float wobblePhase;
+    float instability;
+    bool insideWindow = true;
 
     void Awake()
     {
         rb = GetComponent<Rigidbody>();
         if (!ui)      ui = FindFirstObjectByType<BalanceMinigame>();
+        SubscribeUI();
         if (!health)  health = GetComponent<PlayerHealth>();
         if (rb.angularDamping < 0.08f) rb.angularDamping = 0.08f;
+    }
+
+    void OnValidate()
+    {
+        if (maxBalanceAccel < 1f) maxBalanceAccel = 1f;
+        if (instabilityGrowth < 0f) instabilityGrowth = 0f;
+        if (instabilityDecay < 0f) instabilityDecay = 0f;
+    }
+
+    void OnEnable(){ instability = 0f; wobblePhase = 0f; SubscribeUI(); }
+    void OnDisable(){ UnsubscribeUI(); }
+    void OnDestroy(){ UnsubscribeUI(); }
+
+    void SubscribeUI()
+    {
+        if (!ui)
+            ui = FindFirstObjectByType<BalanceMinigame>();
+
+        if (!ui)
+        {
+            insideWindow = true;
+            return;
+        }
+
+        ui.OnInsideWindowChanged -= HandleInsideWindowChanged;
+        ui.OnInsideWindowChanged += HandleInsideWindowChanged;
+        insideWindow = ui.InsideWindow;
+    }
+
+    void UnsubscribeUI()
+    {
+        if (ui)
+            ui.OnInsideWindowChanged -= HandleInsideWindowChanged;
     }
 
     void FixedUpdate()
     {
         float dt = Time.fixedDeltaTime;
+
+        if (!ui)
+            SubscribeUI();
 
         // Roll (deg) and roll rate (deg/s) about local Z
         float rollDeg  = GetSignedRollDeg();
@@ -62,20 +109,28 @@ public class CanoeBalanceAdapter : MonoBehaviour
         float lean      = ui ? ui.ManualLean : 0f;          // -1..1
 
         // PD toward upright, partially reduced when out of window
-        float pdScale   = Mathf.Lerp(0.25f, 1f, authority); // never zero
+        float pdScale   = Mathf.Lerp(0.08f, 1f, Mathf.Pow(authority, 1.35f));
         float pdTorque  = -(kp * rollDeg + kd * rollRate) * pdScale;
 
         // Player torque scaled by authority
-        float playerTorque = -lean * inputAccel * authority;
+        float playerTorque = -lean * inputAccel * Mathf.Lerp(0.15f, 1f, authority);
 
-        // Small wobble
-        float t = Time.time;
-        float wobSin = Mathf.Sin(t * wobbleHz * Mathf.PI * 2f);
-        float wobPer = Mathf.PerlinNoise(t * wobbleHz, t * wobbleChaos) * 2f - 1f;
-        float wobble = (wobSin * (1f + 0.5f * wobPer)) * wobbleAccel;
+        // Instability from poor balance
+        float dtAuthority = Mathf.Clamp01(1f - authority);
+        float instabTarget = insideWindow ? dtAuthority * authorityInstability : Mathf.Max(instability, 1f + dtAuthority);
+        instability = Mathf.MoveTowards(instability, instabTarget, instabilityGrowth * dt);
+        if (insideWindow)
+            instability = Mathf.MoveTowards(instability, 0f, instabilityDecay * dt);
+        instability = Mathf.Clamp(instability, 0f, 1.5f);
+
+        // Smooth wobble that strengthens with instability
+        wobblePhase += dt * (wobbleHz + instability * wobbleChaos) * Mathf.PI * 2f;
+        float wobble = Mathf.Sin(wobblePhase) * (wobbleAccel + instability * wobbleInstabilityBonus);
+        float destDir = Mathf.Sign(rollDeg + rollRate * 0.18f);
+        float destabilize = destDir * instability * instabilityTorque;
 
         // Sum + clamp
-        float totalNmPerSec = Mathf.Clamp(pdTorque + playerTorque + wobble, -maxBalanceAccel, maxBalanceAccel);
+        float totalNmPerSec = Mathf.Clamp(pdTorque + playerTorque + wobble + destabilize, -maxBalanceAccel, maxBalanceAccel);
         rb.AddRelativeTorque(Vector3.forward * totalNmPerSec, ForceMode.Acceleration);
 
         // Capsize check
@@ -84,6 +139,11 @@ public class CanoeBalanceAdapter : MonoBehaviour
             health?.Kill();
             rb.AddRelativeTorque(transform.forward * Mathf.Sign(rollDeg) * 40f, ForceMode.Impulse);
         }
+    }
+
+    void HandleInsideWindowChanged(bool inside)
+    {
+        insideWindow = inside;
     }
 
     float GetSignedRollDeg()
