@@ -22,6 +22,16 @@ public class HandsSimpleIK : MonoBehaviour
     [SerializeField] Transform leftHand;     // Visual only
     [SerializeField] Transform rightHand;    // Visual only
 
+    [Header("Shaft Reference")]
+    [Tooltip("Local-space start of the shaft (handle end) relative to paddleShaft.")]
+    [SerializeField] Vector3 shaftStartLocal = Vector3.zero;
+    [Tooltip("Local-space end of the shaft near the blade root relative to paddleShaft.")]
+    [SerializeField] Vector3 shaftEndLocal = new Vector3(0f, 0f, 1f);
+    [Tooltip("Local-space up axis around the shaft used to orient the palms.")]
+    [SerializeField] Vector3 shaftUpLocal = Vector3.up;
+    [Tooltip("Flip if the hands wrap the wrong way around the shaft.")]
+    [SerializeField] bool invertWrapDirection = false;
+
     [Header("Grip placement along shaft")]
     [Tooltip("0 = shaft start (handle), 1 = shaft end (near blade root)")]
     [SerializeField, Range(0f, 1f)] float gripA = 0.25f; // rear/handle
@@ -41,9 +51,9 @@ public class HandsSimpleIK : MonoBehaviour
     {
         if (!paddleShaft || !leftHand || !rightHand) return;
 
-        // Compute shaft endpoints in world. Assume local +Z along shaft length.
-        Vector3 shaftStart = paddleShaft.TransformPoint(new Vector3(0f, 0f, 0f));
-        Vector3 shaftEnd   = paddleShaft.TransformPoint(new Vector3(0f, 0f, 1f)); // requires shaft length normalized to 1 in local Z
+        // Compute shaft endpoints in world.
+        Vector3 shaftStart = paddleShaft.TransformPoint(shaftStartLocal);
+        Vector3 shaftEnd   = paddleShaft.TransformPoint(shaftEndLocal);
         Vector3 shaftDir   = (shaftEnd - shaftStart);
         float len = shaftDir.magnitude;
         if (len < 1e-4f) return;
@@ -53,15 +63,27 @@ public class HandsSimpleIK : MonoBehaviour
         Vector3 gripPosA = Vector3.Lerp(shaftStart, shaftEnd, gripA);
         Vector3 gripPosB = Vector3.Lerp(shaftStart, shaftEnd, gripB);
 
-        // Define a local frame for hand orientation: forward along shaft, up roughly world up
-        Vector3 up = Vector3.up;
-        Vector3 right = Vector3.Cross(up, shaftFwd).normalized;
-        if (right.sqrMagnitude < 1e-4f) right = Vector3.right;
+        // Define a local frame for hand orientation: forward along shaft, up from local axis
+        Vector3 up = paddleShaft.TransformDirection(shaftUpLocal);
+        if (up.sqrMagnitude < 1e-4f)
+            up = Vector3.up;
+        up.Normalize();
+
+        Vector3 right = Vector3.Cross(up, shaftFwd);
+        if (right.sqrMagnitude < 1e-4f)
+        {
+            Vector3 fallback = Mathf.Abs(Vector3.Dot(shaftFwd, Vector3.up)) > 0.9f ? Vector3.right : Vector3.up;
+            right = Vector3.Cross(fallback, shaftFwd);
+        }
+        right.Normalize();
         up = Vector3.Cross(shaftFwd, right).normalized;
 
+        float wrapSign = invertWrapDirection ? -1f : 1f;
+        Vector3 wrapRight = right * wrapSign;
+
         // Slight offsets so hands appear to wrap around
-        gripPosA += up * handUpOffset - right * aroundOffset;
-        gripPosB += up * handUpOffset + right * aroundOffset;
+        gripPosA += up * handUpOffset - wrapRight * aroundOffset;
+        gripPosB += up * handUpOffset + wrapRight * aroundOffset;
 
         // Determine side of paddle relative to canoe to swap lead/lag hands
         bool rightSide = true;
@@ -72,7 +94,7 @@ public class HandsSimpleIK : MonoBehaviour
         }
 
         // Build orientation so palms roughly face shaft: forward ~ -right to mimic grip twist
-        Quaternion handRot = Quaternion.LookRotation(-right, up);
+        Quaternion handRot = Quaternion.LookRotation(-wrapRight, up);
 
         // Assign with smoothing
         Transform lead = rightSide ? rightHand : leftHand; // forward grip
