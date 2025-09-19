@@ -13,9 +13,10 @@ public class BalanceMinigame : MonoBehaviour
     [Header("UI Layout")]
     [SerializeField] Vector2 referenceResolution = new(1920f, 1080f);
     [SerializeField] Vector2 anchoredPosition   = new(0f, 0f);
-    [SerializeField] Vector2 gaugeSize          = new(320f, 86f); // width, height
-    [SerializeField, Range(0.15f, 0.9f)] float targetWindowFraction = 0.38f;
-    [SerializeField, Range(0.08f, 0.6f)] float markerFraction       = 0.18f;
+    [SerializeField] Vector2 gaugeAnchor        = new(0.5f, 0.14f);
+    [SerializeField] Vector2 gaugeSize          = new(720f, 120f); // width, height
+    [SerializeField, Range(0.15f, 0.9f)] float targetWindowFraction = 0.42f;
+    [SerializeField, Range(0.08f, 0.6f)] float markerFraction       = 0.16f;
 
     [Header("Marker Motion (2nd-order)")]
     [SerializeField] float markerHz = 3.0f;
@@ -43,8 +44,8 @@ public class BalanceMinigame : MonoBehaviour
     [SerializeField] Color markerDangerColor = new(1f, 0.3f, 0.3f, 0.85f);
 
     [Header("Mini View")]
-    [SerializeField] Vector2 miniViewSize = new(220f, 120f);
-    [SerializeField] Vector2 miniViewOffset = new(0f, -80f);
+    [SerializeField] Vector2 miniViewSize = new(260f, 150f);
+    [SerializeField] Vector2 miniViewOffset = new(0f, -110f);
     [SerializeField] Color miniBackgroundColor = new(0f, 0f, 0f, 0.45f);
     [SerializeField] Color miniWaterColor = new(0.45f, 0.65f, 0.9f, 0.4f);
     [SerializeField] Color miniCanoeColor = new(0.88f, 0.42f, 0.18f, 0.9f);
@@ -59,15 +60,15 @@ public class BalanceMinigame : MonoBehaviour
     [SerializeField] float hitWindowRecovery  = 0.8f;
     [SerializeField] float hitTargetKick      = 0.45f;
     [SerializeField] float hitTargetRecovery  = 1.4f;
-    [SerializeField] float hitJitterDuration  = 0.75f;
-    [SerializeField] float hitJitterFrequency = 16f;
-    [SerializeField] float hitJitterAmplitude = 0.18f;
+    [SerializeField] float hitJitterDuration  = 0.9f;
+    [SerializeField] float hitJitterFrequency = 6f;
+    [SerializeField] float hitJitterAmplitude = 0.14f;
 
     Canvas canvas;
     RectTransform gaugeRect, targetRect, markerRect;
     Image markerImage;
 
-    RectTransform miniRoot, miniCanoeRect, miniBubbleRect;
+    RectTransform miniRoot, miniCanoeRect, miniBubbleRect, miniWaterRect;
     Image miniBubbleImage, miniWaterImage;
 
     // Marker state in horizontal normalized space [-1,1]
@@ -80,6 +81,7 @@ public class BalanceMinigame : MonoBehaviour
     float authority, rollBias, rollDegrees, windowScale = 1f, hitOffset, hitJitterTimer;
     float miniBubbleBaseY;
     Vector2 targetBaseSize;
+    float hitJitterPhase;
 
     float TargetHalf => Mathf.Clamp(targetWindowFraction * windowScale * 0.5f, 0.08f, 0.45f);
     float MarkerHalf => Mathf.Clamp(markerFraction * 0.5f, 0.04f, 0.45f);
@@ -89,6 +91,7 @@ public class BalanceMinigame : MonoBehaviour
 
     public event Action<float> OnAuthorityChanged;
     public event Action<bool>  OnInsideWindowChanged;
+    public bool InsideWindow { get; private set; } = true;
     bool wasInside;
     float _prevRollBias;
 
@@ -100,7 +103,7 @@ public class BalanceMinigame : MonoBehaviour
         if (!canvas) return;
         Destroy(canvas.gameObject); canvas=null;
         gaugeRect=targetRect=markerRect=null;
-        miniRoot=miniCanoeRect=miniBubbleRect=null;
+        miniRoot=miniCanoeRect=miniBubbleRect=miniWaterRect=null;
         miniBubbleImage=miniWaterImage=markerImage=null;
     }
 
@@ -115,6 +118,7 @@ public class BalanceMinigame : MonoBehaviour
         windowScale = Mathf.Clamp(windowScale - hitWindowShrink * s, 0.25f, 1f);
         hitOffset = Mathf.Clamp(hitOffset + dir * hitTargetKick * s, -0.9f, 0.9f);
         hitJitterTimer = Mathf.Max(hitJitterTimer, hitJitterDuration * s);
+        hitJitterPhase = UnityEngine.Random.value * Mathf.PI * 2f;
     }
     public void ResetMinigame()
     {
@@ -163,8 +167,12 @@ public class BalanceMinigame : MonoBehaviour
         float jitter=0f;
         if (hitJitterTimer>0f){
             hitJitterTimer=Mathf.Max(0f, hitJitterTimer-dt);
-            float n = hitJitterDuration>1e-4f ? hitJitterTimer/hitJitterDuration : 0f;
-            jitter = Mathf.Sin(Time.time * hitJitterFrequency * Mathf.PI * 2f) * hitJitterAmplitude * n;
+            hitJitterPhase += dt * hitJitterFrequency * Mathf.PI * 2f;
+            float n = hitJitterDuration>1e-4f ? Mathf.Clamp01(hitJitterTimer/hitJitterDuration) : 0f;
+            float eased = 1f - Mathf.Pow(1f - n, 2f);
+            jitter = Mathf.Sin(hitJitterPhase) * hitJitterAmplitude * eased;
+        } else {
+            hitJitterPhase = 0f;
         }
         targetVisualPos = Mathf.Clamp(targetPos + jitter, -1f + windowHalf, 1f - windowHalf);
 
@@ -196,9 +204,9 @@ public class BalanceMinigame : MonoBehaviour
 
         gaugeRect = new GameObject("BalanceGauge", typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
         gaugeRect.SetParent(canvas.transform, false);
-        gaugeRect.anchorMin = gaugeRect.anchorMax = new Vector2(0.5f, 0.15f); // bottom center
-        gaugeRect.sizeDelta = gaugeSize;
+        gaugeRect.anchorMin = gaugeRect.anchorMax = gaugeAnchor; // bottom center
         gaugeRect.anchoredPosition = anchoredPosition;
+        gaugeRect.sizeDelta = gaugeSize;
         var gaugeImage = gaugeRect.GetComponent<Image>();
         gaugeImage.color = gaugeColor; gaugeImage.raycastTarget = false;
 
@@ -233,12 +241,12 @@ public class BalanceMinigame : MonoBehaviour
         miniRoot.anchoredPosition = miniViewOffset;
         var bg = miniRoot.GetComponent<Image>(); bg.color = miniBackgroundColor; bg.raycastTarget=false;
 
-        var waterRect = new GameObject("MiniWater", typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
-        waterRect.SetParent(miniRoot, false);
-        waterRect.anchorMin = new Vector2(0f, 0.5f);
-        waterRect.anchorMax = new Vector2(1f, 0.5f);
-        waterRect.sizeDelta = new Vector2(0f, Mathf.Max(6f, miniViewSize.y * 0.12f));
-        miniWaterImage = waterRect.GetComponent<Image>();
+        miniWaterRect = new GameObject("MiniWater", typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
+        miniWaterRect.SetParent(miniRoot, false);
+        miniWaterRect.anchorMin = new Vector2(0f, 0.5f);
+        miniWaterRect.anchorMax = new Vector2(1f, 0.5f);
+        miniWaterRect.sizeDelta = new Vector2(0f, Mathf.Max(6f, miniViewSize.y * 0.12f));
+        miniWaterImage = miniWaterRect.GetComponent<Image>();
         miniWaterImage.color = miniWaterColor; miniWaterImage.raycastTarget = false;
 
         miniCanoeRect = new GameObject("MiniCanoe", typeof(RectTransform), typeof(Image)).GetComponent<RectTransform>();
@@ -264,7 +272,13 @@ public class BalanceMinigame : MonoBehaviour
     {
         if (!gaugeRect || !markerRect || !targetRect) return;
 
+        gaugeRect.anchorMin = gaugeRect.anchorMax = gaugeAnchor;
+        gaugeRect.anchoredPosition = anchoredPosition;
+        gaugeRect.sizeDelta = gaugeSize;
+
         float gaugeHalf = gaugeRect.sizeDelta.x * 0.5f; // horizontal extent
+
+        targetBaseSize = new Vector2(gaugeRect.sizeDelta.x * targetWindowFraction, gaugeRect.sizeDelta.y * 0.82f);
 
         // Marker width scales; move along X
         markerRect.sizeDelta = new Vector2(gaugeRect.sizeDelta.x * markerFraction, gaugeRect.sizeDelta.y * 0.6f);
@@ -288,11 +302,25 @@ public class BalanceMinigame : MonoBehaviour
     {
         if (!miniRoot) return;
 
+        if (miniRoot)
+        {
+            miniRoot.sizeDelta = miniViewSize;
+            miniRoot.anchoredPosition = miniViewOffset;
+        }
+
+        if (miniWaterRect)
+            miniWaterRect.sizeDelta = new Vector2(0f, Mathf.Max(6f, miniViewSize.y * 0.12f));
+
         if (miniCanoeRect)
+        {
+            miniCanoeRect.sizeDelta = new Vector2(miniViewSize.x * 0.6f, Mathf.Max(8f, miniViewSize.y * 0.18f));
             miniCanoeRect.localRotation = Quaternion.Euler(0f, 0f, -rollDegrees * miniCanoeRollMultiplier);
+        }
 
         if (miniBubbleRect)
         {
+            miniBubbleRect.sizeDelta = new Vector2(Mathf.Max(10f, miniViewSize.y * 0.18f), Mathf.Max(10f, miniViewSize.y * 0.18f));
+            miniBubbleBaseY = Mathf.Max(6f, miniViewSize.y * 0.26f);
             float range = Mathf.Max(1f, miniBubbleRollRange);
             float normalized = Mathf.Clamp(rollDegrees / range, -1f, 1f);
             float travel = Mathf.Max(0f, (miniViewSize.x * 0.5f) - (miniBubbleRect.sizeDelta.x * 0.5f) - 4f);
@@ -322,5 +350,10 @@ public class BalanceMinigame : MonoBehaviour
         var g = Gamepad.current; if (g != null) x += g.leftStick.x.ReadValue();
         return Mathf.Clamp(x, -1f, 1f);
     }
-    void RaiseInsideWindow(bool inside){ wasInside = inside; OnInsideWindowChanged?.Invoke(inside); }
+    void RaiseInsideWindow(bool inside)
+    {
+        wasInside = inside;
+        InsideWindow = inside;
+        OnInsideWindowChanged?.Invoke(inside);
+    }
 }
